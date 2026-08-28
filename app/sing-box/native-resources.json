@@ -1,0 +1,25 @@
+{
+  "version": "1.13.19",
+  "source": "https://github.com/SagerNet/sing-box/releases/tag/v1.13.19",
+  "license": "GPL-3.0-or-later",
+  "assets": {
+    "win32-x64": {
+      "archive": "sing-box-1.13.19-windows-amd64.zip",
+      "archiveSha256": "e011a4def2f5e2b143ed54adb2b1a20a6be407806ab4442f3667f1dd817a2c8d",
+      "binary": "win32-x64/sing-box.exe",
+      "binarySha256": "a4476dd768168a77e249050066bb32774addefcc37da123978623e7b2819de28"
+    },
+    "darwin-x64": {
+      "archive": "sing-box-1.13.19-darwin-amd64.tar.gz",
+      "archiveSha256": "31ee722237d95774e101fbffeae6be6776249c5f7db229ad8ff00b45b22e6a00",
+      "binary": "darwin-x64/sing-box",
+      "binarySha256": "078164e43464f2282ae526151411320582c3e60a0294cec24a627edf205305a6"
+    },
+    "darwin-arm64": {
+      "archive": "sing-box-1.13.19-darwin-arm64.tar.gz",
+      "archiveSha256": "23bf191906f2dfc9f00e9f0092f274f3426ba9377327e903ff94e636b64d0997",
+      "binary": "darwin-arm64/sing-box",
+      "binarySha256": "5b75c1dec19488675f725adc7a6e3a7301a553117af835dc47669b1fa918976b"
+    }
+  }
+}

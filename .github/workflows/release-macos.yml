@@ -1,0 +1,108 @@
+name: Release macOS packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the signed and notarized DMG to the GitHub release
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: macOS ${{ matrix.arch }} release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-13
+          - arch: arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required signing configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+
+      - name: Static checks
+        run: |
+          npm run typecheck
+          npm test -- --run
+          npm run audit:legacy-surface
+
+      - name: Prepare and validate native resources
+        run: |
+          node scripts/prepare-media-resources.mjs darwin ${{ matrix.arch }}
+          node scripts/prepare-native-resources.mjs darwin ${{ matrix.arch }}
+          node scripts/validate-native-resources.mjs darwin ${{ matrix.arch }}
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package, sign, notarize and optionally publish DMG
+        shell: bash
+        run: |
+          if [ "${{ inputs.publish }}" = "true" ]; then
+            npx electron-builder --mac dmg --${{ matrix.arch }} --publish always
+          else
+            npx electron-builder --mac dmg --${{ matrix.arch }} --publish never
+          fi
+
+      - name: Verify signed app and DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find release -maxdepth 3 -type d -name '*.app' -print -quit)"
+          DMG_PATH="$(find release -maxdepth 1 -type f -name '*-mac-${{ matrix.arch }}.dmg' -print -quit)"
+          test -n "$APP_PATH"
+          test -n "$DMG_PATH"
+          node scripts/audit-package.mjs "$APP_PATH" darwin "${{ matrix.arch }}"
+          node scripts/smoke-packaged.mjs "$APP_PATH" darwin "${{ matrix.arch }}" 6
+          node scripts/verify-macos-release.mjs "$APP_PATH" "${{ matrix.arch }}" --dmg "$DMG_PATH" --signed
+
+      - name: Upload signed DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI创作工作台-signed-mac-${{ matrix.arch }}
+          path: app/release/*-mac-${{ matrix.arch }}.dmg
+          if-no-files-found: error

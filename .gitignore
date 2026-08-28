@@ -1,0 +1,26 @@
+app/node_modules/
+app/out/
+app/release/
+app/data-dev/
+app/data/
+app/*.log
+
+# Generated diagnostics and GUI screenshots
+app/diagnose-packed-data/
+app/diagnose-packed.png
+app/diagnose-gui-preview.png
+app/diagnose-gui-*.png
+
+# Decompiled reference material is for local recovery only, not the build input.
+reference-original/
+
+# Local configuration and operating-system/editor noise
+.env
+.env.*
+!.env.example
+*.local
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

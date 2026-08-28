@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>猫王豆包无水印</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="paper">
+    <header class="cover">
+      <div class="seal" aria-hidden="true">猫</div>
+      <div class="cover-copy">
+        <p>MAOWANG DOWNLOAD</p>
+        <h1>猫王豆包<br>无水印</h1>
+      </div>
+      <span class="free-label">永久免费</span>
+    </header>
+
+    <section class="summary" aria-label="当前页面识别结果">
+      <p class="section-kicker">当前页面</p>
+      <div class="summary-row">
+        <div class="metric">
+          <strong id="imageCount">00</strong>
+          <span>张图片</span>
+        </div>
+        <div class="metric">
+          <strong id="videoCount">00</strong>
+          <span>个视频</span>
+        </div>
+      </div>
+      <p class="summary-note">打开生成结果页面，下载按钮会自动出现。</p>
+      <p class="summary-health" id="healthStatus" data-state="inactive">适配监测：未连接支持页面</p>
+    </section>
+
+    <nav class="destinations" aria-label="支持的平台">
+      <a href="https://www.doubao.com/" target="_blank" rel="noreferrer">
+        <span class="destination-index">豆</span>
+        <span class="destination-copy"><b>豆包</b><small>图片、视频、15 秒生成</small></span>
+        <span class="destination-arrow" aria-hidden="true">↗</span>
+      </a>
+      <a href="https://www.qianwen.com/" target="_blank" rel="noreferrer">
+        <span class="destination-index">千</span>
+        <span class="destination-copy"><b>千问</b><small>图片与视频批量下载</small></span>
+        <span class="destination-arrow" aria-hidden="true">↗</span>
+      </a>
+    </nav>
+
+    <footer class="footer">
+      <button id="refreshButton" type="button">
+        <span class="refresh-glyph" aria-hidden="true"></span>
+        更新数量
+      </button>
+      <div class="footer-meta">
+        <span>本地运行</span>
+        <span id="version">V-</span>
+      </div>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

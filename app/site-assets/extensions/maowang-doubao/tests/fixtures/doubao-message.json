@@ -1,0 +1,30 @@
+[
+  {
+    "message_id": "message-1",
+    "content_block": [
+      {
+        "content": {
+          "creation_block": {
+            "creations": [
+              {
+                "image": {
+                  "image_thumb": {
+                    "url": "https://example.com/thumb.png"
+                  },
+                  "image_ori_raw": {
+                    "url": "https://example.com/original.png",
+                    "width": 2048,
+                    "height": 2048
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "nested": {
+      "video_id": "v0123456789"
+    }
+  }
+]

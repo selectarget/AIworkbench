@@ -1,0 +1,138 @@
+{
+  "name": "ai-creation-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI创作工作台 - 多账号隔离与素材管理",
+  "author": "AI创作工作台",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke:isolation": "node node_modules/electron/cli.js scripts/smoke-account-isolation.mjs",
+    "smoke:session-restart": "node scripts/smoke-session-restart.mjs",
+    "smoke:document-scripts": "node node_modules/electron/cli.js scripts/smoke-document-scripts.mjs",
+    "smoke:fingerprint": "npm run build && node node_modules/electron/cli.js scripts/smoke-fingerprint-runtime.mjs",
+    "smoke:platform-pages": "npm run build && node node_modules/electron/cli.js scripts/smoke-platform-pages.mjs",
+    "smoke:site-adapters": "npm run build && node node_modules/electron/cli.js scripts/smoke-site-adapters.mjs",
+    "smoke:task-workflows": "npm run build && node node_modules/electron/cli.js scripts/smoke-task-workflows.mjs",
+    "smoke:video-notice": "npm run build && node node_modules/electron/cli.js scripts/smoke-video-notice.mjs",
+    "smoke:storage-import": "npm run build && node node_modules/electron/cli.js scripts/smoke-storage-import.mjs",
+    "smoke:proxy-runtime": "node scripts/smoke-proxy-runtime.mjs",
+    "smoke:public-sites": "node scripts/smoke-public-sites.mjs",
+    "smoke:real-sites": "npm run build && node node_modules/electron/cli.js scripts/smoke-real-sites.mjs --",
+    "smoke:real-sites:public": "node scripts/smoke-real-sites-public.mjs",
+    "smoke:legacy-config": "npm run build && node node_modules/electron/cli.js scripts/smoke-legacy-config.mjs --",
+    "smoke:all": "node scripts/smoke-all.mjs",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "smoke:portable": "node scripts/smoke-packaged.mjs release/AI创作工作台-1.0.0-win-x64-portable.exe win32 x64 6",
+    "audit:package": "node scripts/audit-package.mjs",
+    "smoke:face-grid": "npm run build && node node_modules/electron/cli.js scripts/smoke-face-grid.mjs",
+    "smoke:batch-workspace": "npm run build && node node_modules/electron/cli.js scripts/smoke-batch-workspace.mjs",
+    "smoke:gui": "npm run build && node node_modules/electron/cli.js scripts/smoke-gui-preview.mjs",
+    "audit:legacy-surface": "node scripts/audit-legacy-surface.mjs",
+    "verify:mac-release": "node scripts/verify-macos-release.mjs",
+    "pack:win": "node scripts/prepare-media-resources.mjs win32 x64 && npm run build && node scripts/validate-native-resources.mjs win32 x64 && electron-builder --win --x64 --dir",
+    "dist:win": "node scripts/validate-release-env.mjs && node scripts/prepare-media-resources.mjs win32 x64 && node scripts/validate-native-resources.mjs win32 x64 && npm run build && electron-builder --win portable --x64",
+    "pack:mac": "node scripts/prepare-media-resources.mjs darwin x64 darwin arm64 && npm run build && node scripts/prepare-native-resources.mjs darwin x64 darwin arm64 && node scripts/validate-native-resources.mjs darwin x64 darwin arm64 && electron-builder --mac --dir --x64 --arm64",
+    "dist:mac:unsigned": "node scripts/prepare-media-resources.mjs darwin x64 darwin arm64 && node scripts/prepare-native-resources.mjs darwin x64 darwin arm64 && node scripts/validate-native-resources.mjs darwin x64 darwin arm64 && npm run build && electron-builder --mac dmg --x64 --arm64 --publish never",
+    "dist:mac": "node scripts/prepare-media-resources.mjs darwin x64 darwin arm64 && node scripts/prepare-native-resources.mjs darwin x64 darwin arm64 && node scripts/validate-native-resources.mjs darwin x64 darwin arm64 && npm run build && electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "opencv-js-wasm": "^5.0.0-alpha",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "yaml": "^2.8.1",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "@electron/asar": "3.4.1",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "com.aicreation.workbench",
+    "productName": "AI创作工作台",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "site-assets",
+        "to": "site-assets",
+        "filter": [
+          "**/*",
+          "!**/tests/**"
+        ]
+      },
+      {
+        "from": "sing-box",
+        "to": "sing-box",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "media-tools",
+        "to": "media-tools",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "face-grid-assets",
+        "to": "face-grid-assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "icon": "build-assets/app.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "entitlements": "build-assets/entitlements.mac.plist",
+      "entitlementsInherit": "build-assets/entitlements.mac.plist",
+      "gatekeeperAssess": false,
+      "artifactName": "AI创作工作台-${version}-mac-${arch}.${ext}"
+    },
+    "win": {
+      "icon": "build-assets/app.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AI创作工作台-${version}-win-x64-portable.${ext}"
+    }
+  }
+}

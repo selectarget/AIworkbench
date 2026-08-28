@@ -1,0 +1,212 @@
+name: macOS build and package audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "app/**"
+      - ".github/workflows/build-macos.yml"
+
+concurrency:
+  group: macos-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Build macOS x64 and arm64 directory packages
+    runs-on: macos-14
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test -- --run
+
+      - name: Build for Electron smoke tests
+        run: npm run build
+
+      - name: Account isolation smoke
+        run: npm run smoke:isolation
+
+      - name: Document script ordering smoke
+        run: npm run smoke:document-scripts
+
+      - name: Storage import smoke
+        run: npm run smoke:storage-import
+
+      - name: Proxy runtime smoke
+        run: npm run smoke:proxy-runtime
+
+      - name: FaceGrid smoke
+        run: npm run smoke:face-grid
+
+      - name: Batch workspace smoke
+        run: npm run smoke:batch-workspace
+
+      - name: Video notice smoke
+        run: npm run smoke:video-notice
+
+      - name: Public platform entry smoke
+        run: npm run smoke:public-sites
+
+      - name: Platform adapter runtime smoke
+        run: npm run smoke:site-adapters
+
+      - name: Task workflow runtime smoke
+        run: npm run smoke:task-workflows
+
+      - name: Build unsigned macOS directory packages
+        run: npm run pack:mac
+
+      - name: Audit each generated app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r app_path; do
+            found=1
+            main_binary="$(find "$app_path/Contents/MacOS" -maxdepth 1 -type f -print -quit)"
+            if [ -z "$main_binary" ]; then
+              echo "No app executable found in $app_path" >&2
+              exit 1
+            fi
+            description="$(file -b "$main_binary")"
+            case "$description" in
+              *arm64*) arch=arm64 ;;
+              *x86_64*) arch=x64 ;;
+              *)
+                echo "Unable to determine app architecture: $description" >&2
+                exit 1
+                ;;
+            esac
+            echo "Auditing $app_path as darwin-$arch"
+            node scripts/audit-package.mjs "$app_path" darwin "$arch"
+          done < <(find release -type d -name '*.app' -print)
+          if [ "$found" -eq 0 ]; then
+            echo "No macOS .app bundle was produced" >&2
+            exit 1
+          fi
+
+      - name: Start each generated app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r app_path; do
+            found=1
+            main_binary="$(find "$app_path/Contents/MacOS" -maxdepth 1 -type f -print -quit)"
+            description="$(file -b "$main_binary")"
+            case "$description" in
+              *arm64*) arch=arm64 ;;
+              *x86_64*) arch=x64 ;;
+              *) echo "Unable to determine app architecture: $description" >&2; exit 1 ;;
+            esac
+            echo "Starting $app_path as darwin-$arch"
+            node scripts/smoke-packaged.mjs "$app_path" darwin "$arch" 6
+            node scripts/verify-macos-release.mjs "$app_path" "$arch"
+          done < <(find release -type d -name '*.app' -print)
+          if [ "$found" -eq 0 ]; then
+            echo "No macOS .app bundle was produced" >&2
+            exit 1
+          fi
+
+      - name: Build unsigned macOS DMGs
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist:mac:unsigned
+
+      - name: Verify DMG artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=(release/*.dmg)
+          if [ "${#artifacts[@]}" -eq 0 ]; then
+            echo "No macOS DMG was produced" >&2
+            exit 1
+          fi
+          for artifact in "${artifacts[@]}"; do
+            shasum -a 256 "$artifact"
+          done
+
+      - name: Audit app bundles inside DMGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for dmg in release/*.dmg; do
+            mount_point="$(mktemp -d)"
+            device=""
+            cleanup() {
+              if [ -n "$device" ]; then
+                hdiutil detach "$device" -quiet || true
+              fi
+              rmdir "$mount_point" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+            attach_output="$(hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_point")"
+            device="$(printf '%s\n' "$attach_output" | awk 'NF && $1 ~ /^\/dev\/disk/ { print $1; exit }')"
+            app_path="$(find "$mount_point" -type d -name '*.app' -print -quit)"
+            if [ -z "$app_path" ]; then
+              echo "No .app bundle found inside $dmg" >&2
+              exit 1
+            fi
+            main_binary="$(find "$app_path/Contents/MacOS" -maxdepth 1 -type f -print -quit)"
+            description="$(file -b "$main_binary")"
+            case "$description" in
+              *arm64*) arch=arm64 ;;
+              *x86_64*) arch=x64 ;;
+              *) echo "Unable to determine DMG app architecture: $description" >&2; exit 1 ;;
+            esac
+            echo "Auditing $dmg as darwin-$arch"
+            node scripts/audit-package.mjs "$app_path" darwin "$arch"
+            cleanup
+            trap - EXIT
+          done
+
+      - name: Verify DMGs with the release verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for dmg in release/*.dmg; do
+            case "$dmg" in
+              *-mac-x64.dmg) arch=x64 ;;
+              *-mac-arm64.dmg) arch=arm64 ;;
+              *) echo "Unable to infer DMG architecture: $dmg" >&2; exit 1 ;;
+            esac
+            node scripts/verify-macos-release.mjs "$dmg" "$arch"
+          done
+
+      - name: Upload unsigned directory packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-directory-packages
+          path: app/release/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload unsigned DMGs
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-unsigned-dmgs
+          path: app/release/*.dmg
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>15s duration harness</title>
+</head>
+<body>
+  <div id="toolbar">
+    <span>Seedance 2.0 Fast</span>
+    <button id="duration-trigger" type="button"><span id="toolbar-duration">10s</span></button>
+    <button type="button">比例</button>
+  </div>
+
+  <div id="duration-menu" role="menu" aria-label="10s">
+    <div>时长</div>
+    <div role="menuitem" tabindex="0" style="cursor: pointer">
+      <span>5s</span>
+      <svg width="12" height="12"></svg>
+    </div>
+    <div id="native-10s" role="menuitem" tabindex="0" style="cursor: pointer">
+      <span>10s</span>
+      <svg width="12" height="12"></svg>
+    </div>
+  </div>
+
+  <pre id="result">pending</pre>
+
+  <script>
+    window.__capturedRequest = null;
+    document.getElementById("duration-trigger").addEventListener("click", function () {
+      const menu = document.getElementById("duration-menu");
+      menu.hidden = !menu.hidden;
+    });
+    document.getElementById("native-10s").addEventListener("click", function () {
+      document.getElementById("duration-menu").hidden = true;
+    });
+    window.fetch = async function mockFetch(input, init) {
+      window.__capturedRequest = { input: String(input), body: init && init.body };
+      return new Response("", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    };
+  </script>
+  <script src="../shared/platform-rules.js"></script>
+  <script src="../page/doubao-bridge.js"></script>
+  <script>
+    window.addEventListener("DOMContentLoaded", function () {
+      setTimeout(async function () {
+        const option = Array.from(document.querySelectorAll('[role="menuitem"]'))
+          .find(function (item) { return item.textContent.includes("15s"); });
+        if (!option) {
+          document.getElementById("result").textContent = JSON.stringify({ optionFound: false });
+          document.body.dataset.test = "failed";
+          return;
+        }
+
+        option.click();
+        await window.fetch("https://www.doubao.com/chat/completion", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            chat_ability: {
+              ability_type: 17,
+              ability_param: JSON.stringify({ model: "seedance_v2.0", duration: 10 })
+            }
+          })
+        });
+
+        const request = JSON.parse(window.__capturedRequest.body);
+        const ability = JSON.parse(request.chat_ability.ability_param);
+        const result = {
+          optionFound: true,
+          toolbar: document.getElementById("toolbar-duration").textContent.trim(),
+          stored: localStorage.getItem("maowang_doubao_duration"),
+          menuHidden: document.getElementById("duration-menu").hidden,
+          requestDuration: ability.duration,
+          requestModel: ability.model
+        };
+        const passed = result.toolbar === "15s"
+          && result.stored === "15"
+          && result.menuHidden
+          && result.requestDuration === 15
+          && result.requestModel === "seedance_v2.0";
+        document.body.dataset.test = passed ? "passed" : "failed";
+        document.getElementById("result").textContent = JSON.stringify(result);
+      }, 350);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+{
+  "manifest_version": 3,
+  "name": "猫王豆包无水印",
+  "version": "1.1.1",
+  "description": "免费、轻量的豆包与千问图片视频下载工具。",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "猫王豆包无水印",
+    "default_icon": {
+      "16": "assets/icon.png",
+      "32": "assets/icon.png",
+      "48": "assets/icon.png",
+      "128": "assets/icon.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon.png",
+    "32": "assets/icon.png",
+    "48": "assets/icon.png",
+    "128": "assets/icon.png"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.doubao.com/*",
+    "https://api-normal.doubao.com/*",
+    "https://*.qianwen.com/*",
+    "https://*.qwen.ai/*",
+    "https://qwen.ai/*",
+    "https://*.tongyi.aliyun.com/*",
+    "https://tongyi.aliyun.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.doubao.com/*",
+        "https://doubao.com/*"
+      ],
+      "js": [
+        "shared/platform-rules.js",
+        "page/doubao-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.doubao.com/*",
+        "https://doubao.com/*"
+      ],
+      "css": [
+        "content/console.css"
+      ],
+      "js": [
+        "content/doubao.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.qianwen.com/*",
+        "https://qianwen.com/*",
+        "https://*.qwen.ai/*",
+        "https://qwen.ai/*",
+        "https://*.tongyi.aliyun.com/*",
+        "https://tongyi.aliyun.com/*"
+      ],
+      "css": [
+        "content/console.css"
+      ],
+      "js": [
+        "shared/platform-rules.js",
+        "content/qianwen.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

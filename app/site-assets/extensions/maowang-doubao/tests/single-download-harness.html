@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>单个下载测试</title>
+  <link rel="stylesheet" href="../content/console.css">
+</head>
+<body>
+  <output id="result">等待测试</output>
+  <script>
+    window.__downloadMessages = [];
+    window.chrome = {
+      runtime: {
+        lastError: null,
+        sendMessage(message, callback) {
+          window.__downloadMessages.push(message);
+          callback({ success: true, id: 1 });
+        }
+      }
+    };
+  </script>
+  <script src="../content/doubao.js"></script>
+  <script>
+    window.addEventListener("load", () => {
+      window.postMessage({
+        source: "maowang-doubao-bridge",
+        type: "MW_DOUBAO_MEDIA",
+        images: [
+          { url: "https://example.com/rc_gen_image/first.png", width: 1024, height: 1024 },
+          { url: "https://example.com/rc_gen_image/second.png", width: 2048, height: 2048 }
+        ],
+        videos: []
+      }, location.origin);
+
+      setTimeout(() => {
+        const buttons = document.querySelectorAll(".mw-item-download");
+        if (buttons.length !== 2) {
+          document.querySelector("#result").textContent = `失败：单项按钮数量为 ${buttons.length}`;
+          document.body.dataset.test = "failed";
+          return;
+        }
+
+        window.__downloadMessages.length = 0;
+        buttons[1].click();
+        setTimeout(() => {
+          const downloads = window.__downloadMessages.filter((message) => message.type === "MW_DOWNLOAD");
+          const passed = downloads.length === 1
+            && downloads[0].item.url === "https://example.com/rc_gen_image/second.png";
+          document.querySelector("#result").textContent = passed
+            ? "通过：点击第二项仅下载第二张图片"
+            : `失败：${JSON.stringify(downloads)}`;
+          document.body.dataset.test = passed ? "passed" : "failed";
+        }, 30);
+      }, 250);
+    });
+  </script>
+</body>
+</html>

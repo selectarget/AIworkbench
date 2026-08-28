@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>豆包无水印下载</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <img src="icon.png" class="logo" alt="logo" />
+      <div class="header-info">
+        <h1 class="title">豆包无水印下载</h1>
+        <p class="subtitle">AI 图片/视频无水印下载工具</p>
+      </div>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="main" class="section">
+      <div class="info-box">
+        <p class="info-text">图片/视频右下角出现按钮即可下载无水印原文件。</p>
+      </div>
+
+      <div class="stats">
+        <div class="stat-item">
+          <span class="stat-value" id="imageCount">0</span>
+          <span class="stat-label">已捕获图片</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-value" id="videoCount">0</span>
+          <span class="stat-label">已捕获视频</span>
+        </div>
+      </div>
+      
+    </div>
+
+    <div class="footer">
+      <p class="version-text" id="versionText">随工作台运行 · 本地功能状态</p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

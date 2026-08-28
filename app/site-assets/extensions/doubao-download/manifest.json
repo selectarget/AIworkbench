@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "豆包下载器",
+  "version": "1.0",
+  "description": "豆包下载器",
+  "author": "mr_dadong",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "32": "icon.png",
+      "48": "icon.png",
+      "64": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "64": "icon.png",
+    "128": "icon.png"
+  },
+  "permissions": [],
+  "host_permissions": ["https://*.doubao.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.doubao.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.doubao.com/*"],
+      "js": ["forwarder.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

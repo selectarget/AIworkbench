@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "豆包视频15秒",
+  "version": "1.1",
+  "description": "为豆包视频生成增加15秒选项，解锁更长视频创作。",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.doubao.com/*",
+        "*://doubao.com/*",
+        "*://www.dola.com/*",
+        "*://dola.com/*",
+        "*://www.ciciai.com/*",
+        "*://ciciai.com/*"
+      ],
+      "js": [
+        "background.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content.js"
+      ],
+      "matches": [
+        "*://www.doubao.com/*",
+        "*://doubao.com/*",
+        "*://www.dola.com/*",
+        "*://dola.com/*",
+        "*://www.ciciai.com/*",
+        "*://ciciai.com/*"
+      ]
+    }
+  ]
+}

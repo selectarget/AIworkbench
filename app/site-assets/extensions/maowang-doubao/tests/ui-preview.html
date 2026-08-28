@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>猫王豆包无水印 UI 预览</title>
+  <link rel="stylesheet" href="../content/console.css">
+  <style>
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.85), transparent 46%),
+        #d9d2c5;
+      font-family: "Microsoft YaHei UI", sans-serif;
+    }
+
+    .mock-media {
+      position: absolute;
+      left: 60px;
+      top: 70px;
+      width: 440px;
+      height: 330px;
+      overflow: hidden;
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at 32% 32%, #f4c7b8 0 9%, transparent 10%),
+        linear-gradient(145deg, #98b8b0 0 48%, #33566d 49% 100%);
+      box-shadow: 0 24px 80px rgba(23, 42, 73, 0.2);
+    }
+
+    .mock-media::before {
+      content: "媒体内容预览";
+      position: absolute;
+      left: 24px;
+      bottom: 24px;
+      color: white;
+      font-size: 14px;
+      letter-spacing: 0.15em;
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-media">
+    <button class="mw-media-action" type="button">下载原图</button>
+  </div>
+
+  <aside class="mw-console" id="mw-console">
+    <header class="mw-console__header">
+      <div class="mw-console__identity">
+        <span class="mw-console__eyebrow">豆包下载助手</span>
+        <strong class="mw-console__title">猫王豆包无水印</strong>
+      </div>
+      <div class="mw-console__controls">
+        <button class="mw-icon-button" type="button">−</button>
+        <button class="mw-icon-button" type="button">×</button>
+      </div>
+    </header>
+    <div class="mw-console__body">
+      <nav class="mw-tabs">
+        <button class="mw-tab" type="button" aria-selected="true">媒体下载</button>
+        <button class="mw-tab" type="button" aria-selected="false">对话目录</button>
+      </nav>
+      <section class="mw-view">
+        <div class="mw-readout">
+          <div class="mw-readout__cell"><span>已发现图片</span><strong>08</strong></div>
+          <div class="mw-readout__cell"><span>已发现视频</span><strong>03</strong></div>
+        </div>
+        <section class="mw-media-section">
+          <div class="mw-media-section__head">
+            <strong>单个下载</strong>
+            <span>按需选择，避免重复</span>
+          </div>
+          <div class="mw-media-list">
+            <div class="mw-media-list__item">
+              <span class="mw-media-list__copy"><b>图片 01</b><small>2048 × 2048</small></span>
+              <button class="mw-item-download" type="button">单独下载</button>
+            </div>
+            <div class="mw-media-list__item">
+              <span class="mw-media-list__copy"><b>视频 01</b><small>无水印视频</small></span>
+              <button class="mw-item-download" type="button">单独下载</button>
+            </div>
+          </div>
+        </section>
+        <div class="mw-console__actions">
+          <button class="mw-primary" type="button">全部下载</button>
+          <button class="mw-secondary" type="button">重新扫描</button>
+        </div>
+        <div class="mw-console__status"><span>免费使用 · 本地运行</span><i></i></div>
+      </section>
+    </div>
+  </aside>
+</body>
+</html>
