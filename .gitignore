@@ -12,7 +12,12 @@ app/diagnose-gui-preview.png
 app/diagnose-gui-*.png
 
 # Decompiled reference material is for local recovery only, not the build input.
+# reference/ is the V5.2 drop; the docs cite it by that path, so it stays on disk and out of git.
 reference-original/
+reference/
+
+# Packaged output of the standalone model_image_sorter tool (two 11 MB executables).
+dist/
 
 # Local configuration and operating-system/editor noise
 .env

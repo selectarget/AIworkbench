@@ -1,7 +1,8 @@
 # AI 创作工作台技术架构分析与跨平台重建方案
 
-> 文档状态：2026-08-28  
-> 适用目录：`D:\GitProject\test\mac-source-rebuilt`  
+> 文档状态：2026-09-05  
+> 适用目录：`D:\GitProject\AIworkbench`  
+> 对照源：V5.2（差量见 [`V52_DELTA.md`](V52_DELTA.md)，反编译见 `reference/v52/`）  
 > 目标：在不依赖原始 Git 历史的情况下，基于现有恢复材料重建 Windows/macOS 共用版本。
 
 ## 1. 结论摘要

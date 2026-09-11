@@ -1,6 +1,6 @@
 # AI 创作工作台：Mac 重建源码
 
-本目录是从 `D:\GitProject\test` 和 `D:\GitProject\test\analysis` 整理出的独立副本。原始 EXE、分析目录和现有工程均未修改。
+本目录是从 `D:\GitProject\test` 和 `D:\GitProject\test\analysis` 整理出的独立副本。功能对照已切到 **V5.2**（2026-09-05），差量见 [`V52_DELTA.md`](V52_DELTA.md)；反编译材料在 `reference/v52/`，不进入构建。原始 EXE、分析目录和现有工程均未修改。
 
 ## 当前迁移状态
 

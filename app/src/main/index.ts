@@ -125,7 +125,8 @@ async function createWindow(): Promise<BrowserWindow> {
   await runtimeTeardown;
   const window = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1080, minHeight: 680, title: 'AI创作工作台',
-    backgroundColor: '#0b1020', autoHideMenuBar: true,
+    backgroundColor: '#f3f4f7', autoHideMenuBar: true,
+    ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#ffffff', symbolColor: '#303746', height: 36 } } : {}),
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
@@ -140,11 +141,17 @@ async function createWindow(): Promise<BrowserWindow> {
   });
   const services = getPersistentServices();
   const { accounts, settings, proxy, fingerprints, plugins, media, updates, externalLogin, cacheCleaner } = services;
+  const syncWindowTheme = (theme: 'light' | 'dark'): void => {
+    window.setBackgroundColor(theme === 'light' ? '#f3f4f7' : '#30343c');
+    if (process.platform === 'win32') window.setTitleBarOverlay({ color: theme === 'light' ? '#ffffff' : '#30343c', symbolColor: theme === 'light' ? '#303746' : '#f3f4f7', height: 36 });
+  };
+  syncWindowTheme(settings.get().theme);
   configureBossKey(window, settings.get());
   const browser = new BrowserManager(window, accounts, settings, proxy, fingerprints, plugins);
   media.setProgrammaticDownloadMarker((accountId, url) => browser.markProgrammaticDownload(accountId, url));
   const disposeSettingsListener = settings.onChange((value, previous) => {
     configureBossKey(window, value);
+    syncWindowTheme(value.theme);
     void browser.syncAdapterSettings(previous.disabledAdapters, value.disabledAdapters, previous.experimentalResponsePatchEnabled !== value.experimentalResponsePatchEnabled);
   });
   // Match the original application: captured resources are a runtime feed, not a cross-restart archive.
@@ -156,8 +163,8 @@ async function createWindow(): Promise<BrowserWindow> {
     mediaProtocolInstalled = true;
   }
   activeMedia = media;
-  browser.setMediaSink((accountId, resource) => { if (!captureModeAccepts(settings.get().captureMode, resource)) return; media.add(accountId, resource); });
-  browser.setSiteDownloadSink((accountId, resource) => { if (!captureModeAccepts(settings.get().captureMode, resource)) return; const added = media.add(accountId, resource); if (added) { media.enqueue(added.id); void media.materializeBlobPreview(added.id).catch(() => undefined); } });
+  browser.setMediaSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; media.add(accountId, resource); });
+  browser.setSiteDownloadSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, resource); if (added) { media.enqueue(added.id); void media.materializeBlobPreview(added.id).catch(() => undefined); } });
   browser.setNativeDownloadSink((notice) => { if (!window.isDestroyed()) window.webContents.send(channels.filesDownloaded, notice); });
   browser.setNativeDownloadPathResolver((accountId, filename) => media.reserveNativeDownloadPath(accountId, filename), (path) => media.releaseReservedDownloadPath(path));
   const migration = new LegacyMigrationService(window, accounts, join(paths.config, 'accounts.json'), (accountId, bundle) => browser.importStorage(accountId, bundle), settings);

@@ -97,7 +97,7 @@
 
   function duration30Enabled() {
     try {
-      return localStorage.getItem(DURATION_KEY) === "1";
+      return localStorage.getItem(DURATION_KEY) !== "0";
     } catch {
       return false;
     }

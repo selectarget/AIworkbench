@@ -31,6 +31,12 @@ describe('contracts', () => {
     expect(settingsSchema.parse({}).captureMode).toBe('all');
     expect(settingsSchema.parse({ captureMode: 'video' }).captureMode).toBe('video');
   });
+  it('keeps image parsing off for new and existing settings until explicitly enabled', () => {
+    expect(settingsSchema.parse({}).parseImages).toBe(false);
+    expect(settingsSchema.parse({ captureMode: 'all' }).parseImages).toBe(false);
+    expect(settingsSchema.parse({ parseImages: true }).parseImages).toBe(true);
+    expect(settingsSchema.parse({ parseImages: false }).parseImages).toBe(false);
+  });
   it('persists the Dola aspect ratio in the application settings', () => {
     expect(settingsSchema.parse({}).dolaAspectRatio).toBe('16:9');
     expect(settingsSchema.parse({ dolaAspectRatio: '9:16' }).dolaAspectRatio).toBe('9:16');

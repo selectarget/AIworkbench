@@ -13,6 +13,7 @@ export type DataPathOptions = {
   executableDirectory: string;
   appDataDirectory: string;
   portableDirectory?: string;
+  canWriteDirectory?: (directory: string) => boolean;
 };
 
 export type ProfileLocationInfo = {
@@ -39,14 +40,35 @@ export function resolveRuntimeDataOptions(): DataPathOptions {
   };
 }
 
+export function isProtectedInstallDirectory(directory: string): boolean {
+  const normalized = directory.replace(/\//g, '\\').toLowerCase();
+  return /(?:^|\\)program files(?: \(x86\))?(?:\\|$)/i.test(normalized)
+    || /(?:^|\\)windowsapps(?:\\|$)/i.test(normalized)
+    || /(?:^|\\)windows(?:\\|$)/i.test(normalized);
+}
+
+function directoryAcceptsData(directory: string, options: DataPathOptions): boolean {
+  const value = directory.trim();
+  if (!value || isProtectedInstallDirectory(value)) return false;
+  if (options.canWriteDirectory) return options.canWriteDirectory(value);
+  try {
+    assertWritableDirectory(value, '程序目录');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveDataBase(options: DataPathOptions): string {
   if (!options.packaged) return options.cwd;
   if (options.platform === 'win32') {
-    // A portable build exposes PORTABLE_EXECUTABLE_DIR and can safely keep
-    // data beside the executable. An installed build may live under
-    // Program Files, so never make the executable directory the implicit
-    // writable data root.
-    return options.portableDirectory?.trim() || join(options.appDataDirectory, 'AI创作工作台');
+    // Portable single-file builds set PORTABLE_EXECUTABLE_DIR. Unpacked
+    // directory builds should also stay beside the exe when that folder is
+    // writable. Program Files / WindowsApps stay in user AppData.
+    const portable = options.portableDirectory?.trim();
+    if (portable) return portable;
+    if (directoryAcceptsData(options.executableDirectory, options)) return options.executableDirectory;
+    return join(options.appDataDirectory, 'AI创作工作台');
   }
   // A macOS app bundle is normally installed under /Applications and is not
   // writable by the application. Keep user data outside the bundle so updates

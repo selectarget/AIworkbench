@@ -203,6 +203,7 @@ export const settingsSchema = z.object({
   legacyV44MediaFolders: z.boolean().default(false),
   videoFilenamePrefix: z.string().trim().max(80).default(''),
   captureMode: captureModeSchema.default('all'),
+  parseImages: z.boolean().default(false),
   downloadConcurrency: z.coerce.number().int().min(1).max(6).default(2),
   downloadRetryCount: z.coerce.number().int().min(0).max(5).default(2),
   experimentalResponsePatchEnabled: z.boolean().default(true),
@@ -255,6 +256,7 @@ export type ApiError = { code: string; message: string };
 export type ApiResult<T = void> = { ok: true; data: T } | { ok: false; error: ApiError };
 
 export type ViewLayout = {
+  occluded?: boolean;
   primary: { x: number; y: number; width: number; height: number };
   secondary?: { x: number; y: number; width: number; height: number };
 };

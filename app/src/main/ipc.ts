@@ -24,7 +24,7 @@ import { normalizeExternalHttpUrl } from './path-utils';
 
 type Services = { accounts: AccountService; browser: BrowserManager; media: MediaService; settings: SettingsService; updates: UpdateService; externalLogin: ExternalLoginService; proxy: ProxyService; fingerprints: FingerprintService; migration: LegacyMigrationService; plugins: PluginService; profileLocation: ProfileLocationService; cacheCleaner: LegacyCacheCleaner; requestRestart: () => void };
 const idSchema = z.string().min(6).max(80);
-const layoutSchema = z.object({ primary: z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }), secondary: z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }).optional() });
+const layoutSchema = z.object({ occluded: z.boolean().optional(), primary: z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }), secondary: z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }).optional() });
 const externalBrowserLayoutSchema = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().int().min(320).max(10_000), height: z.number().int().min(240).max(10_000) });
 const dolaReferenceKindSchema = z.enum(['audio', 'video']);
 const faceGridSaveSchema = z.object({ inputPath: z.string().min(1).max(4096), outputDir: z.string().max(4096).optional(), mode: z.enum(['grid', 'regroup']), mime: z.enum(['image/png', 'image/jpeg', 'image/webp']), dataUrl: z.string().regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/).max(160_000_000), faceCount: z.number().int().min(0).max(1000), scaled: z.boolean() });
@@ -283,7 +283,7 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
     const parsed = remoteMediaSchema.safeParse(raw); if (!parsed.success) return;
     const hasDolaLocator = [parsed.data.messageId, parsed.data.shareId, parsed.data.shareUrl, parsed.data.threadUrl, parsed.data.vid, parsed.data.keySeed, parsed.data.fplayUrl, parsed.data.dolaRecordKey, parsed.data.dolaCardId, parsed.data.dolaVideoElementId].some((item) => Boolean(item?.trim()));
     if (!parsed.data.url && (account.platform !== 'dola' || parsed.data.type !== 'video' || !hasDolaLocator)) return;
-    if (!captureModeAccepts(settings.get().captureMode, parsed.data)) return;
+    if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), parsed.data)) return;
     const added = media.add(accountId, parsed.data);
     if (added && parsed.data.autoDownload && added.url) media.enqueue(added.id);
     if (added) void media.materializeBlobPreview(added.id).catch(() => undefined);
@@ -315,7 +315,7 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
     const account = accounts.list().find((item) => item.id === accountId);
     if (!account || account.platform !== 'dola' || !isRemoteAdapterEnabled(account.platform, settings.get().disabledAdapters)) return;
     const parsed = remoteDolaTokenSchema.safeParse(raw); if (!parsed.success) return;
-    if (!captureModeAccepts(settings.get().captureMode, { type: 'video' })) return;
+    if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), { type: 'video' })) return;
     browser.resolveDolaToken(accountId, parsed.data);
   };
   ipcMain.on(channels.remoteDolaToken, remoteDolaTokenHandler);

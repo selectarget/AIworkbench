@@ -21,6 +21,9 @@
   var generationStartedAt = 0;
   var scanTimer = 0;
   var parseBudget = 0;
+  var fallbackRecords = window.__dolaNativeFallbackRecords = window.__dolaNativeFallbackRecords || [];
+  var recentClickDownloads = new Map();
+  var QAAB_SALT_HEX = '4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58';
   var fplayPattern = /\/video\/fplay\//i;
   var videoExtensionPattern = /\.(?:mp4|webm|mov|m4v|mkv|avi|flv|ts|m2ts|mts|mpeg|mpg|3gp|3g2|ogv)(?:[?#]|$)/i;
   var streamPattern = /\.(?:m3u8|mpd)(?:[?#]|$)/i;
@@ -562,6 +565,348 @@
     return changed;
   }
 
+  function videoKeyFromUrl(value) {
+    try {
+      var url = cleanUrl(value);
+      if (!/^https?:\/\//i.test(url)) return '';
+      var parsed = new URL(url, location.href);
+      var path = decodeURIComponent(parsed.pathname || '');
+      var marker = '/video/tos/';
+      var index = path.toLowerCase().indexOf(marker);
+      if (index < 0) return '';
+      path = path.slice(index).replace(/\/+$/g, '');
+      return path.split('/').length >= 5 ? path.toLowerCase() : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function collectVideoKeys(value, depth, out, seen) {
+    var keys = out || new Set();
+    var visited = seen || new Set();
+    if (depth > 8 || value == null) return keys;
+    if (typeof value === 'string') {
+      var directKey = videoKeyFromUrl(cleanUrl(value));
+      if (directKey) keys.add(directKey);
+      var pattern = /https?:\\?\/\\?\/[^"'<>\s\\]+/gi;
+      var match;
+      while ((match = pattern.exec(value))) {
+        var found = videoKeyFromUrl(match[0]);
+        if (found) keys.add(found);
+      }
+      return keys;
+    }
+    if (typeof value !== 'object' || visited.has(value)) return keys;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      value.forEach(function (item) { collectVideoKeys(item, depth + 1, keys, visited); });
+    } else {
+      Object.keys(value).forEach(function (key) { collectVideoKeys(value[key], depth + 1, keys, visited); });
+    }
+    return keys;
+  }
+
+  function addFallbackRecord(api, context) {
+    var url = cleanUrl(api);
+    if (!/^https?:\/\//i.test(url) || !/(?:dola|ciciai)\.com/i.test(url)) return;
+    var keys = Array.from(collectVideoKeys(context || '', 0)).filter(Boolean);
+    var existing = fallbackRecords.findIndex(function (record) { return record && String(record.api).toLowerCase() === url.toLowerCase(); });
+    if (existing >= 0) fallbackRecords.splice(existing, 1);
+    fallbackRecords.push({ api: url, keys: keys, time: Date.now() });
+    while (fallbackRecords.length > 120) fallbackRecords.shift();
+  }
+
+  function rememberFallbackApis(text) {
+    var body = asString(text);
+    if (!body || body.indexOf('fallback_api') < 0) return;
+    var patterns = [
+      /["']fallback_api["']\s*:\s*["']([^"']+)["']/gi,
+      /fallback_api\\+["']\s*:\s*\\+["']([^\\"']+)/gi,
+      /fallback_api[^\n\r]{0,120}?(https?:\\?\/\\?\/[^"'\\\s<>]+)/gi
+    ];
+    patterns.forEach(function (pattern) {
+      var match;
+      while ((match = pattern.exec(body))) addFallbackRecord(match[1], body.slice(Math.max(0, match.index - 4000), Math.min(body.length, match.index + 4000)));
+    });
+    try { rememberFallbackObject(JSON.parse(body), 0, new Set()); } catch (_error) { /* HTML and SSE still match the regexes above. */ }
+  }
+
+  function rememberFallbackObject(value, depth, seen) {
+    if (depth > 9 || value == null) return;
+    if (typeof value === 'string') {
+      rememberFallbackApis(value);
+      return;
+    }
+    if (typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    if (typeof value.fallback_api === 'string') addFallbackRecord(value.fallback_api, value);
+    if (Array.isArray(value)) {
+      value.forEach(function (item) { rememberFallbackObject(item, depth + 1, seen); });
+    } else {
+      Object.keys(value).forEach(function (key) { rememberFallbackObject(value[key], depth + 1, seen); });
+    }
+  }
+
+  function withUnwatermarkParams(url) {
+    var parsed = new URL(url, location.href);
+    parsed.searchParams.set('channel', 'no');
+    parsed.searchParams.set('codec_type', '8');
+    parsed.searchParams.set('logo_type', 'unwatermarked');
+    return parsed.href;
+  }
+
+  function hexBytes(hex) {
+    var out = new Uint8Array(hex.length / 2);
+    for (var index = 0; index < out.length; index += 1) out[index] = parseInt(hex.substr(index * 2, 2), 16);
+    return out;
+  }
+
+  function concatBytes(left, right) {
+    var out = new Uint8Array(left.length + right.length);
+    out.set(left, 0);
+    out.set(right, left.length);
+    return out;
+  }
+
+  function stripPkcs7(bytes) {
+    if (!bytes || !bytes.length) return null;
+    var count = bytes[bytes.length - 1];
+    if (count < 1 || count > 16 || count > bytes.length) return null;
+    for (var index = bytes.length - count; index < bytes.length; index += 1) if (bytes[index] !== count) return null;
+    return bytes.slice(0, bytes.length - count);
+  }
+
+  function bytesToHttpUrl(bytes) {
+    try {
+      if (!bytes || !bytes.length) return '';
+      for (var index = 0; index < bytes.length; index += 1) {
+        var code = bytes[index];
+        if (code !== 9 && code !== 10 && code !== 13 && (code < 32 || code > 126)) return '';
+      }
+      var text = new TextDecoder('ascii').decode(bytes).replace(/\0+$/g, '').trim();
+      return /^https?:\/\//i.test(text) ? text : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function b64BytesLoose(text) {
+    try {
+      var raw = String(text || '').trim();
+      var variants = [raw, raw.replace(/\$/g, '_').replace(/@/g, '/').replace(/#/g, '.'), raw.replace(/\$/g, '+').replace(/@/g, '/').replace(/#/g, '=')];
+      var tried = new Set();
+      for (var index = 0; index < variants.length; index += 1) {
+        var candidate = variants[index];
+        if (!candidate || tried.has(candidate)) continue;
+        tried.add(candidate);
+        candidate = candidate.replace(/-/g, '+').replace(/_/g, '/');
+        candidate += '='.repeat((4 - (candidate.length % 4)) % 4);
+        try {
+          var binary = atob(candidate);
+          var bytes = new Uint8Array(binary.length);
+          for (var offset = 0; offset < binary.length; offset += 1) bytes[offset] = binary.charCodeAt(offset);
+          return bytes;
+        } catch (_decodeError) { /* try the next alphabet */ }
+      }
+    } catch (_error) { /* malformed token */ }
+    return null;
+  }
+
+  async function tryAesCbc(payload, key, iv) {
+    try {
+      var cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['decrypt']);
+      return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv: iv }, cryptoKey, payload));
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async function decodeQaabToken(token, keySeed) {
+    try {
+      if (!crypto || !crypto.subtle) return '';
+      var payload = b64BytesLoose(token);
+      var seed = b64BytesLoose(keySeed);
+      if (!payload || !seed) return '';
+      var first = new Uint8Array(await crypto.subtle.digest('SHA-512', seed.slice(0, Math.min(seed.length, 32))));
+      var second = new Uint8Array(await crypto.subtle.digest('SHA-512', concatBytes(first, hexBytes(QAAB_SALT_HEX))));
+      var key = second.slice(0, 16);
+      var alternate = second.slice(16, 32);
+      var attempts = [];
+      if (payload.length >= 4 && payload[0] === 168 && payload[1] === 0 && payload[2] === 1 && payload[3] === 0) {
+        attempts.push([payload.slice(4), key, alternate], [payload.slice(4), alternate, key]);
+        if (payload.length > 36) attempts.push([payload.slice(36), key, payload.slice(20, 36)], [payload.slice(36), key, alternate]);
+      } else attempts.push([payload, key, alternate]);
+      for (var index = 0; index < attempts.length; index += 1) {
+        var body = attempts[index][0];
+        if (!body.length || body.length % 16) continue;
+        var decrypted = await tryAesCbc(body, attempts[index][1], attempts[index][2]);
+        var direct = bytesToHttpUrl(decrypted);
+        if (direct) return direct;
+        var stripped = bytesToHttpUrl(stripPkcs7(decrypted));
+        if (stripped) return stripped;
+      }
+    } catch (_error) { /* keep the locator-only fallback below */ }
+    return '';
+  }
+
+  async function decodeMainUrl(token, keySeed) {
+    var value = String(token || '').trim();
+    if (/^https?:\/\//i.test(value)) return value;
+    var decoded = bytesToHttpUrl(b64BytesLoose(value));
+    if (decoded) return decoded;
+    if (value.indexOf('qAAB') === 0 && keySeed) return decodeQaabToken(value, keySeed);
+    return '';
+  }
+
+  function pickMainUrlToken(data) {
+    var source = (data && data.video_info) || (data && data.data && data.data.video_info) || data;
+    var video = (source && source.data) || source || data;
+    var list = video && video.video_list ? (Array.isArray(video.video_list) ? video.video_list : Object.keys(video.video_list).map(function (key) { return video.video_list[key]; })) : [video];
+    var best = '';
+    var bestScore = -Infinity;
+    list.filter(Boolean).forEach(function (item) {
+      if (!item || typeof item !== 'object') return;
+      var token = String(item.main_url || item.play_url || '').trim();
+      if (!token) return;
+      var score = Number(item.bitrate || item.real_bitrate || 0) + Number(item.vwidth || item.width || 0) * Number(item.vheight || item.height || 0);
+      if (!best || score > bestScore) { best = token; bestScore = score; }
+    });
+    return best;
+  }
+
+  function showNativeToast(message, success) {
+    try {
+      var toast = document.getElementById('dola-native-video-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'dola-native-video-toast';
+        (document.body || document.documentElement).appendChild(toast);
+      }
+      toast.textContent = message;
+      toast.style.cssText = [
+        'position:fixed', 'z-index:2147483647', 'left:50%', 'top:92px', 'transform:translateX(-50%)',
+        'min-width:168px', 'max-width:360px', 'padding:10px 14px', 'box-sizing:border-box', 'border-radius:12px',
+        'background:' + (success ? 'rgba(22,163,74,.96)' : 'rgba(220,38,38,.96)'),
+        'color:#fff', 'font:700 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', 'text-align:center',
+        'box-shadow:0 12px 30px rgba(15,23,42,.28)', 'opacity:1', 'transition:opacity .25s ease', 'pointer-events:none'
+      ].join(';');
+      clearTimeout(window.__dolaNativeVideoToastTimer);
+      window.__dolaNativeVideoToastTimer = setTimeout(function () {
+        var node = document.getElementById('dola-native-video-toast');
+        if (node) node.style.opacity = '0';
+      }, 2600);
+    } catch (_error) { /* toast is advisory */ }
+  }
+
+  function isDolaVideoUrl(value) {
+    try {
+      if (!value) return false;
+      var parsed = new URL(String(value), location.href);
+      var host = (parsed.hostname || '').replace(/^www\./i, '').toLowerCase();
+      if (!(host === 'dola.com' || host.endsWith('.dola.com') || host === 'ciciai.com' || host.endsWith('.ciciai.com'))) return false;
+      var text = (parsed.pathname + '?' + parsed.search).toLowerCase();
+      return text.indexOf('/video/') >= 0 || text.indexOf('.mp4') >= 0 || text.indexOf('.m3u8') >= 0 || text.indexOf('mime_type=video') >= 0 || text.indexOf('content-type=video') >= 0 || text.indexOf('video_mp4') >= 0;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function findFallbackRecordForClickedUrl(clickedUrl) {
+    try {
+      rememberFallbackApis(document.documentElement ? document.documentElement.innerHTML : '');
+      var clickedKey = videoKeyFromUrl(clickedUrl);
+      if (!clickedKey) return null;
+      var records = fallbackRecords.filter(function (record) { return record && /^https?:\/\//i.test(cleanUrl(record.api || '')); }).slice().sort(function (left, right) { return Number(right.time || 0) - Number(left.time || 0); });
+      return records.find(function (record) { return Array.isArray(record.keys) && record.keys.indexOf(clickedKey) >= 0; }) || null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async function resolveFallbackApi(fallbackApi) {
+    var response = await fetch(withUnwatermarkParams(fallbackApi), { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) throw new Error('fallback_api failed ' + response.status);
+    var json = await response.json();
+    var token = pickMainUrlToken(json);
+    var videoUrl = await decodeMainUrl(token, findKeySeed(json, 0));
+    var posterUrl = findField(json, ['poster_url', 'posterUrl', 'cover_url', 'coverUrl'], 0) || videoUrl;
+    return { videoUrl: videoUrl, posterUrl: posterUrl };
+  }
+
+  async function notifyVideoLinkClicked(clickedUrl) {
+    var originalUrl = cleanUrl(clickedUrl);
+    if (!originalUrl) return false;
+    var last = recentClickDownloads.get(originalUrl) || 0;
+    if (Date.now() - last < 3000) return true;
+    recentClickDownloads.set(originalUrl, Date.now());
+    Array.from(recentClickDownloads.entries()).forEach(function (entry) {
+      if (Date.now() - entry[1] > 15000) recentClickDownloads.delete(entry[0]);
+    });
+    var record = findFallbackRecordForClickedUrl(originalUrl);
+    if (!record || !record.api) {
+      showNativeToast('这个是预览链接，暂未匹配到无水印下载地址', false);
+      publish(originalUrl, { source: 'dola-native-video-click', field: 'preview_url', confirmedNoWatermark: false, qualityEvidence: 'dom-direct', resolutionMethod: 'dola-native-video-click' });
+      return false;
+    }
+    showNativeToast('正在解析无水印下载地址...', true);
+    try {
+      var resolved = await resolveFallbackApi(record.api);
+      var videoUrl = cleanUrl(resolved && resolved.videoUrl);
+      if (!/^https?:\/\//i.test(videoUrl)) throw new Error('empty');
+      var item = publish(videoUrl, {
+        source: 'dola-video-fallback-api',
+        coverUrl: cleanUrl((resolved && resolved.posterUrl) || videoUrl),
+        confirmedNoWatermark: true,
+        qualityEvidence: 'platform-api',
+        resolutionMethod: 'fallback_api'
+      });
+      if (item) download(item);
+      else download({ videoUrl: videoUrl, coverUrl: cleanUrl((resolved && resolved.posterUrl) || videoUrl), title: 'Dola 原视频', confirmedNoWatermark: true, qualityEvidence: 'platform-api', resolutionMethod: 'fallback_api' });
+      showNativeToast('已同步无水印下载地址', true);
+      return true;
+    } catch (_error) {
+      showNativeToast('无水印解析失败，已保留原链接', false);
+      publish(originalUrl, { source: 'dola-native-video-click', field: 'preview_url', confirmedNoWatermark: false, qualityEvidence: 'dom-direct', resolutionMethod: 'dola-native-video-click' });
+      return false;
+    }
+  }
+
+  function hrefFromEvent(event) {
+    try {
+      var path = event.composedPath ? event.composedPath() : [];
+      for (var index = 0; index < path.length; index += 1) {
+        var node = path[index];
+        if (!node) continue;
+        if (node.href) return node.href;
+        if (node.getAttribute) {
+          var href = node.getAttribute('href') || node.getAttribute('src') || node.getAttribute('data-href') || node.getAttribute('data-src') || '';
+          if (href) return href;
+        }
+      }
+      if (event.target && event.target.closest) {
+        var anchor = event.target.closest('a[href]');
+        if (anchor) return anchor.href || anchor.getAttribute('href') || '';
+      }
+    } catch (_error) { /* event path can be revoked */ }
+    return '';
+  }
+
+  function installNativeVideoClickCapture() {
+    if (window.__dolaVideoLinkNativeDownloadInstalled) return;
+    window.__dolaVideoLinkNativeDownloadInstalled = true;
+    document.addEventListener('click', function (event) {
+      try {
+        var href = hrefFromEvent(event);
+        if (isDolaVideoUrl(href)) notifyVideoLinkClicked(href);
+      } catch (_error) { /* page click handlers must not throw */ }
+    }, true);
+    var originalOpen = window.open;
+    window.open = function (url) {
+      if (isDolaVideoUrl(url)) notifyVideoLinkClicked(url);
+      return originalOpen.apply(this, arguments);
+    };
+  }
+
   function collectUrlText(text, details) {
     var value = asString(text);
     if (!value || value.length > MAX_TEXT || parseBudget > 10000) return;
@@ -596,6 +941,7 @@
     keys.slice(0, 300).forEach(function (key) {
       var child = value[key];
       if (/^(?:raw_data|audio_data|bytes|base64|binary)$/i.test(key)) return;
+      if (/^fallback_api$/i.test(key) && typeof child === 'string') addFallbackRecord(child, value);
       walk(child, next, key, depth + 1, visited);
     });
   }
@@ -605,6 +951,7 @@
     if (!value || value.length > MAX_TEXT) return;
     parseBudget = 0;
     var base = Object.assign({ source: source, title: document.title || 'Dola 视频' }, details || {});
+    rememberFallbackApis(value);
     try {
       walk(JSON.parse(value), metadata({}, base), '', 0);
     } catch (_error) {
@@ -1320,6 +1667,7 @@
 
   hookFetch();
   hookXhr();
+  installNativeVideoClickCapture();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { scheduleScan(); startMutationObserver(); }, { once: true });
     window.setTimeout(startMutationObserver, 0);

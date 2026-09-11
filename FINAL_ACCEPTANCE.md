@@ -1,7 +1,8 @@
 # AI 创作工作台迁移验收报告
 
-日期：2026-08-28  
-正式构建入口：`D:\\GitProject\\test\\mac-source-rebuilt\\app`
+日期：2026-09-05  
+正式构建入口：`D:\\GitProject\\AIworkbench\\app`  
+对照源：V5.2（见 `V52_DELTA.md`）
 
 ## 结论
 

@@ -27,7 +27,7 @@ vi.mock('electron', () => ({
   shell: {}
 }));
 
-import { BrowserManager, classifyNativeDownload, dolaFallbackReferer, inspectDolaCompletionBody, ProgrammaticDownloadGuard } from '../src/main/browser-manager';
+import { BrowserManager, classifyNativeDownload, dolaFallbackReferer, inspectDolaCompletionBody, isDolaExternalVideoUrl, ProgrammaticDownloadGuard } from '../src/main/browser-manager';
 
 describe('programmatic download guard', () => {
   it('matches account and global marks, then expires them', () => {
@@ -46,6 +46,16 @@ describe('programmatic download guard', () => {
     guard.mark('account_1', 'https://cdn.example.com/one.mp4', 5_000);
     expect(guard.shouldCancel('account_1', 'https://cdn.example.com/two.mp4', 5_100)).toBe(false);
     expect(guard.shouldCancel('account_1', 'https://cdn.example.com/one.mp4', 4_900)).toBe(false);
+  });
+});
+
+describe('Dola external video URL detection', () => {
+  it('keeps Dola and ciciai video links in-app and ignores unrelated hosts', () => {
+    expect(isDolaExternalVideoUrl('https://www.dola.com/video/tos/cn/example/1.mp4')).toBe(true);
+    expect(isDolaExternalVideoUrl('https://cdn.ciciai.com/play/clip?mime_type=video_mp4')).toBe(true);
+    expect(isDolaExternalVideoUrl('https://www.dola.com/chat')).toBe(false);
+    expect(isDolaExternalVideoUrl('https://www.doubao.com/video/tos/cn/example/1.mp4')).toBe(false);
+    expect(isDolaExternalVideoUrl('not-a-url')).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -15,6 +15,17 @@ function setup(persist = false, platform = 'doubao', resolveBlob?: (accountId: s
 async function waitFor(predicate: () => boolean): Promise<void> { for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 10)); } throw new Error('timeout'); }
 
 describe('media download queue', () => {
+  it('matches V5.2 numbered downloads and skips occupied bare-number directories', async () => {
+    const { dir, service } = setup(false, 'qianwen', undefined, undefined, '', '', true);
+    mkdirSync(join(dir, 'Videos', '1'), { recursive: true });
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'video/mp4' } })));
+    const item = service.add('account_1', { type: 'video', url: 'https://cdn.example.com/clip.mp4', source: 'qianwen-api', width: 1920, height: 1080 })!;
+    const batch = service.enqueueMany([item.id, item.id]);
+    expect(batch).toHaveLength(1);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(service.tasks()[0]?.path).toBe(join(dir, 'Videos', '2.mp4'));
+    expect(service.enqueue(item.id).id).toBe(batch[0]!.id);
+  });
   const video = (url: string, extra = {}) => ({ type: 'video', url, title: '作品', source: 'doubao-creation-resource-panel', ...extra });
   const image = (url: string, extra = {}) => ({ type: 'image', url, title: '作品', source: 'doubao-image-data', width: 1024, height: 1024, ...extra });
   it('applies the capture mode before a resource enters the main-process feed', () => {
@@ -22,6 +33,7 @@ describe('media download queue', () => {
     expect(captureModeAccepts('image', image('https://cdn.example.com/a.png'))).toBe(true);
     expect(captureModeAccepts('image', video('https://cdn.example.com/a.mp4'))).toBe(false);
     expect(captureModeAccepts('video', video('https://cdn.example.com/a.mp4'))).toBe(true);
+    expect(captureModeAccepts('video', image('https://cdn.example.com/a.png'))).toBe(false);
   });
   it('allows a window-bound task listener to be removed before the next window is created', async () => {
     const { service } = setup();

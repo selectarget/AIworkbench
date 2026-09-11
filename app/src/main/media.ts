@@ -331,6 +331,7 @@ export class MediaService {
       const videoExtensions = [...new Set([extension.toLowerCase(), '.mp4', '.webm', '.mov', '.m4v'])];
       for (let index = 1; index <= 1000; index++) {
         const stem = String(index);
+        if (existsSync(join(folder, stem))) continue;
         if (videoExtensions.some((item) => this.isPathOccupied(join(folder, `${stem}${item}`)))) continue;
         return `${stem}${extension}`;
       }

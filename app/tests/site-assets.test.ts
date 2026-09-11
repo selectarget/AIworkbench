@@ -41,12 +41,25 @@ describe('Dola page bridge asset', () => {
     expect(source).toContain('downloadResolvedVideo');
     expect(source).toContain('downloadCurrentVideo');
     expect(source).toContain('ensureVideoElementId');
+    expect(source).toContain('fallback_api');
+    expect(source).toContain('installNativeVideoClickCapture');
+    expect(source).toContain('dola-native-video-toast');
+    expect(source).toContain('__dolaVideoLinkNativeDownloadInstalled');
+    expect(source).toContain('/video/tos/');
     expect(source).toContain('解析并打开');
     expect(source).toContain("window.open(item.videoUrl, '_blank'");
     expect(source).toContain('解析原始');
     expect(source).toContain('videoGeneratedNotice');
     expect(source).toContain('scanGeneratedVideoNotices');
     expect(source).not.toContain('chrome.downloads');
+  });
+});
+
+describe('Doubao 15s extension host scope', () => {
+  it('does not rewrite completion requests on doubao.com', () => {
+    const content = readFileSync(resolve('site-assets/extensions/doubao-video-15s/content.js'), 'utf8');
+    expect(content).toContain("if (host === 'doubao.com' || host.endsWith('.doubao.com')) return;");
+    expect(content).toContain('TARGET_DURATION = 15');
   });
 });
 
@@ -60,6 +73,7 @@ describe('Dola duration and media bridge asset', () => {
     expect(source).toContain('matchedCount');
     expect(source).toContain('seedance_v2.5');
     expect(source).toContain('duration = 30');
+    expect(source).toContain('localStorage.getItem(DURATION_KEY) !== "0"');
     expect(source).toContain('ciciai.com');
     expect(source).not.toMatch(/chrome\.runtime|Paojiao|activation|license|授权|激活|machine.?id/i);
   });
@@ -73,6 +87,7 @@ describe('Dola ciciai compatibility', () => {
     const bridge = readFileSync(resolve('site-assets/scripts/dola-resource-bridge.js'), 'utf8');
     expect(task).toContain('(?:dola|ciciai)');
     expect(content).toContain('doubao|dola|ciciai');
+    expect(content).toContain("host === 'doubao.com' || host.endsWith('.doubao.com')");
     expect(manifest).toContain('*://www.ciciai.com/*');
     expect(manifest).toContain('*://ciciai.com/*');
     expect(bridge).toContain('function startMutationObserver');

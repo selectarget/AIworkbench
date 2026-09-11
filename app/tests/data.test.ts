@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { prepareDataPaths, ProfileLocationService, resolveDataBase, resolveDataPaths, resolveProfileLocation, normalizeProfileLocation, type DataPathOptions, type DataPaths } from '../src/main/data';
+import { prepareDataPaths, ProfileLocationService, isProtectedInstallDirectory, resolveDataBase, resolveDataPaths, resolveProfileLocation, normalizeProfileLocation, type DataPathOptions, type DataPaths } from '../src/main/data';
 
 describe('portable data path', () => {
   it('keeps Windows portable data beside the executable', () => {
@@ -10,7 +10,19 @@ describe('portable data path', () => {
   });
 
   it('keeps installed Windows data in user Application Data', () => {
+    expect(isProtectedInstallDirectory('C:\\Program Files\\AI\\')).toBe(true);
     expect(resolveDataBase({ packaged: true, platform: 'win32', cwd: 'C:\\dev', executableDirectory: 'C:\\Program Files\\AI\\', appDataDirectory: 'C:\\Users\\tester\\AppData' })).toBe(join('C:\\Users\\tester\\AppData', 'AI创作工作台'));
+  });
+
+  it('keeps Windows unpacked data beside a writable executable directory', () => {
+    expect(resolveDataBase({
+      packaged: true,
+      platform: 'win32',
+      cwd: 'C:\\dev',
+      executableDirectory: 'D:\\AI创作工作台',
+      appDataDirectory: 'C:\\Users\\tester\\AppData',
+      canWriteDirectory: () => true
+    })).toBe('D:\\AI创作工作台');
   });
 
   it('keeps macOS packaged data in user Application Support', () => {

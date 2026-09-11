@@ -1,6 +1,13 @@
 (function () {
   'use strict';
 
+  // V5.2 WatermarkChannel2: Doubao keeps native duration. Do not inject 15s
+  // completion rewriting or duration menus on doubao.com.
+  try {
+    const host = String(location.hostname || '').toLowerCase();
+    if (host === 'doubao.com' || host.endsWith('.doubao.com')) return;
+  } catch (_) {}
+
   const TARGET_DURATION = 15;
   const TARGET_MODEL = 'seedance_v2.0';
   const STORAGE_KEY = 'codex_doubao_video_duration_choice';

@@ -663,6 +663,7 @@
   }
 
   function createConsole() {
+    if (globalThis.__AIAM_WORKBENCH_MODE__) return;
     if (consoleElement || !document.body) return;
     consoleElement = document.createElement("section");
     consoleElement.id = "mw-console";
@@ -793,6 +794,7 @@
   });
 
   document.addEventListener("keydown", (event) => {
+    if (globalThis.__AIAM_WORKBENCH_MODE__) return;
     if (!event.ctrlKey || !event.shiftKey) return;
     if (event.key.toLowerCase() === "m") {
       event.preventDefault();

@@ -1,8 +1,8 @@
 # V4.4 / 旧 Electron 功能迁移验收矩阵
 
-文档日期：2026-08-28  
-正式构建入口：`D:\GitProject\test\mac-source-rebuilt\app`  
-参考材料：`reference-original/electron-source/`、`reference-original/v44-dotnet/`
+文档日期：2026-09-05  
+正式构建入口：`D:\GitProject\AIworkbench\app`  
+参考材料：`reference/v52/`（V5.2 反编译）、V4.4 Electron 基线；差量见 [`V52_DELTA.md`](V52_DELTA.md)
 
 ## 读法
 
@@ -13,7 +13,7 @@
 
 统计校准（2026-08-28）：本轮新增旧版代理订阅转换字段保留、严格 Base64/大小边界、媒体 URL 归一化及回归测试后，当前本机测试总数为 267 项（36 个测试文件）；下方历史追加段落中的旧测试数量仅保留执行记录，当前验收以本条和最新回归结果为准。
 
-当前单元测试：267 项（36 个测试文件）；另有 Electron 集成冒烟覆盖账号隔离、结构化存储导入、目标导航前脚本注册和首个 Fetch 捕获、实际浏览器兼容脚本的首段执行及 `chrome.runtime`/插件/mimeTypes/connection/窗口尺寸兼容项、生成式指纹脚本在真实页面中的前置注入/UA/UA-CH/屏幕/时区/Canvas/WebRTC 运行时行为、Dola 视频生成提醒的页面桥链路，以及同账号 sing-box 并发启动复用验证。平台 fixture 还覆盖全部 11 个注册平台的安全主机匹配和旧版专用响应入口；`smoke:platform-pages` 进一步在真实 Electron `WebContentsView` 中验证 Kimi 通用图片/视频捕获、响应式 `srcset`、`<picture><source>`、受限 CSS 背景图、图片/视频类型优先级，以及不加载通用页面脚本时 sandboxed remote preload 的 DOM 兜底捕获；同时验证 Dola 视频资源、生成完成提醒和逐视频浮层；`smoke:site-adapters` 验证 Dola 30 秒请求改写、豆包创作页资源扫描、Higgsfield 课程跳转和即梦原图按钮桥接；`smoke:task-workflows` 还验证豆包账号级 15/30 秒页面设置和桥接事件；新增 `smoke:session-restart` 跨两个独立 Electron 进程复核持久 Session 的 Cookie、LocalStorage、IndexedDB、CacheStorage 和账号隔离。媒体解析单测另外覆盖 Dola 备用解析沿用账号 Session 的平台 User-Agent 并去除 Electron 标识、Dola fallback 实际请求 Header、紧凑 SSE、NDJSON 和有大小/深度边界的嵌套 JSON 字符串；插件导入单测覆盖目录、ZIP、CRX2、CRX3 和路径穿越防护；renderer/service 回归还覆盖已观察媒体候选的角色标注和主进程选择校验、HTTP 200 错误页/响应流中断后的候选回退以及失败候选状态推送；平台适配器关闭时，普通媒体、视频提醒和 Dola 令牌事件链均在主进程入口统一拒绝；新增发布配置回归确认 macOS x64/arm64 的签名、公证、审计和启动步骤仍在工作流中；程序化下载 URL 与 Chromium `will-download` 事件的账号级/默认 Session 短窗口去重也有单测覆盖；共享媒体 URL 工具还覆盖旧版 JSON/HTML 中的转义斜杠、Unicode 转义、外层引号和 HTML 实体，并在主进程去重与下载前统一校验 HTTP(S)/Blob 协议；订阅单测还覆盖旧版 VMess WebSocket/gRPC/HTTP-H2、TLS SNI/证书校验/ALPN/客户端指纹、hysteria2 带宽/混淆、严格 Base64 和 10 MB 大小边界。
+当前单元测试：269 项（36 个测试文件）；本轮 V5.2 差量新增 Dola 外链视频识别与豆包 15 秒 host 作用域回归。另有 Electron 集成冒烟覆盖账号隔离、结构化存储导入、目标导航前脚本注册和首个 Fetch 捕获、实际浏览器兼容脚本的首段执行及 `chrome.runtime`/插件/mimeTypes/connection/窗口尺寸兼容项、生成式指纹脚本在真实页面中的前置注入/UA/UA-CH/屏幕/时区/Canvas/WebRTC 运行时行为、Dola 视频生成提醒的页面桥链路，以及同账号 sing-box 并发启动复用验证。平台 fixture 还覆盖全部 11 个注册平台的安全主机匹配和旧版专用响应入口；`smoke:platform-pages` 进一步在真实 Electron `WebContentsView` 中验证 Kimi 通用图片/视频捕获、响应式 `srcset`、`<picture><source>`、受限 CSS 背景图、图片/视频类型优先级，以及不加载通用页面脚本时 sandboxed remote preload 的 DOM 兜底捕获；同时验证 Dola 视频资源、生成完成提醒和逐视频浮层；`smoke:site-adapters` 验证 Dola 30 秒请求改写、豆包创作页资源扫描、Higgsfield 课程跳转和即梦原图按钮桥接；`smoke:task-workflows` 还验证豆包账号级 15/30 秒页面设置和桥接事件；新增 `smoke:session-restart` 跨两个独立 Electron 进程复核持久 Session 的 Cookie、LocalStorage、IndexedDB、CacheStorage 和账号隔离。媒体解析单测另外覆盖 Dola 备用解析沿用账号 Session 的平台 User-Agent 并去除 Electron 标识、Dola fallback 实际请求 Header、紧凑 SSE、NDJSON 和有大小/深度边界的嵌套 JSON 字符串；插件导入单测覆盖目录、ZIP、CRX2、CRX3 和路径穿越防护；renderer/service 回归还覆盖已观察媒体候选的角色标注和主进程选择校验、HTTP 200 错误页/响应流中断后的候选回退以及失败候选状态推送；平台适配器关闭时，普通媒体、视频提醒和 Dola 令牌事件链均在主进程入口统一拒绝；新增发布配置回归确认 macOS x64/arm64 的签名、公证、审计和启动步骤仍在工作流中；程序化下载 URL 与 Chromium `will-download` 事件的账号级/默认 Session 短窗口去重也有单测覆盖；共享媒体 URL 工具还覆盖旧版 JSON/HTML 中的转义斜杠、Unicode 转义、外层引号和 HTML 实体，并在主进程去重与下载前统一校验 HTTP(S)/Blob 协议；订阅单测还覆盖旧版 VMess WebSocket/gRPC/HTTP-H2、TLS SNI/证书校验/ALPN/客户端指纹、hysteria2 带宽/混淆、严格 Base64 和 10 MB 大小边界。
 
 最新本机回归（2026-08-28）：`npm run smoke:all` 通过，36 个测试文件共 267 项测试全部通过；Dola 解析器的跨平台 User-Agent 兼容测试、实际 fallback 请求 Header 测试、CRX2/CRX3 插件导入测试、平台适配器禁用状态统一门禁测试、程序化下载重复事件保护测试、媒体 URL 归一化测试以及旧版代理订阅字段保留测试均已纳入该统计。前文追加段落中的较低测试数属于历史基线，当前数量以本段和“当前单元测试”行为准。
 

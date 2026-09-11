@@ -43,6 +43,19 @@ type DolaReferenceUploadObservation = {
  * URL captured at Network.responseReceived so the authenticated fallback fetch
  * gets the same page context as the response that exposed it.
  */
+export function isDolaExternalVideoUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    if (!(host === 'dola.com' || host.endsWith('.dola.com') || host === 'ciciai.com' || host.endsWith('.ciciai.com'))) return false;
+    const text = `${parsed.pathname}?${parsed.search}`.toLowerCase();
+    return text.includes('/video/') || text.includes('.mp4') || text.includes('.m3u8') || text.includes('mime_type=video') || text.includes('content-type=video') || text.includes('video_mp4');
+  } catch {
+    return false;
+  }
+}
+
 export function dolaFallbackReferer(responseUrl: string): string {
   try {
     const url = new URL(responseUrl);
@@ -328,6 +341,7 @@ export class BrowserManager {
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     view.webContents.setWindowOpenHandler(({ url }) => {
       if (!/^https?:\/\//i.test(url)) return { action: 'deny' };
+      if (account.platform === 'dola' && !this.settings.get().disabledAdapters.includes('dola') && isDolaExternalVideoUrl(url)) return { action: 'deny' };
       const batchPlatform: BatchLoginPlatform = account.platform === 'higgsfield' ? 'higgsfield' : 'dola';
       if (!isBatchLoginUrl(url, batchPlatform)) { void shell.openExternal(url); return { action: 'deny' }; }
       const popup = new BrowserWindow({
@@ -834,7 +848,8 @@ export class BrowserManager {
   private applyLayout(): void {
     if (this.batchWindow && !this.batchWindow.isDestroyed()) { this.applyBatchLayout(); return; }
     for (const [id, entry] of this.entries) {
-      if (id === this.primaryId) entry.view.setBounds(this.rect(this.layout.primary));
+      if (this.layout.occluded) entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+      else if (id === this.primaryId) entry.view.setBounds(this.rect(this.layout.primary));
       else if (id === this.secondaryId && this.layout.secondary) entry.view.setBounds(this.rect(this.layout.secondary));
       else entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     }
@@ -872,7 +887,9 @@ export class BrowserManager {
     ids.forEach((accountId, index) => {
       const entry = this.entries.get(accountId);
       if (!entry || entry.view.webContents.isDestroyed()) return;
-      entry.view.setBounds({ x: (index % columns) * (cellWidth + gap), y: Math.floor(index / columns) * (cellHeight + gap), width: cellWidth, height: cellHeight });
+      entry.view.setBounds(this.layout.occluded
+        ? { x: 0, y: 0, width: 0, height: 0 }
+        : { x: (index % columns) * (cellWidth + gap), y: Math.floor(index / columns) * (cellHeight + gap), width: cellWidth, height: cellHeight });
     });
   }
   private restoreBatchWorkspace(batch: BrowserWindow): void {
