@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { accountViewNeedsReconfigure, connectionVisualState, mediaCandidateCount, mediaCandidates, mediaPreviewKind, moveAccountIds, restoreOpenTabs, splitIntoBatches } from '../src/renderer/src/App';
+import { accountViewNeedsReconfigure, connectionVisualState, mediaCandidateCount, mediaCandidates, mediaFormatToken, mediaPreviewKind, moveAccountIds, restoreOpenTabs, splitIntoBatches } from '../src/renderer/src/App';
 
 describe('renderer startup state', () => {
   it('keeps only successfully restored tabs and de-duplicates saved ids', async () => {
@@ -54,6 +54,19 @@ describe('renderer startup state', () => {
   it('counts unique media failover candidates for the resource panel', () => {
     expect(mediaCandidateCount({ url: 'https://cdn.example.com/main', backupUrl: 'https://cdn.example.com/backup', alternateUrls: ['https://cdn.example.com/backup', 'https://cdn.example.com/third', ''] })).toBe(3);
     expect(mediaCandidateCount({ url: '', backupUrl: undefined, alternateUrls: [] })).toBe(0);
+  });
+
+  it('names a captured resource format only when the URL path really carries one', () => {
+    expect(mediaFormatToken('https://cdn.example.com/video/clip.mp4')).toBe('MP4');
+    expect(mediaFormatToken('https://cdn.example.com/pic/cover.PNG?sign=abc&t=1')).toBe('PNG');
+    expect(mediaFormatToken('blob:https://example.test/9f8e')).toBe('');
+    // The path is the only thing read. Reading the whole URL made every bare host report
+    // its TLD as the container format - https://api.dola-xhr-response.com rendered as COM.
+    expect(mediaFormatToken('https://api.dola-xhr-response.com')).toBe('');
+    expect(mediaFormatToken('https://api.dola-xhr-response.com/video/stream')).toBe('');
+    // No guessing: the v52 original defaulted to mp4, which is a claim we cannot support.
+    expect(mediaFormatToken('https://cdn.example.com/video/clip')).toBe('');
+    expect(mediaFormatToken('')).toBe('');
   });
 
   it('labels observed media candidates without inventing or reordering URLs', () => {

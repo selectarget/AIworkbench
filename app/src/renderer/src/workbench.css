@@ -70,8 +70,6 @@
 :root[data-theme="light"] .tab{color:#6e7a94;border-color:#e3e8f2}
 :root[data-theme="light"] .search,:root[data-theme="light"] .form-grid input,:root[data-theme="light"] .form-grid select,:root[data-theme="light"] .proxy-box input,:root[data-theme="light"] .proxy-box select,:root[data-theme="light"] .group-toolbar select,:root[data-theme="light"] .settings-list>label input,:root[data-theme="light"] .settings-list>label select,:root[data-theme="light"] .library-toolbar input,:root[data-theme="light"] .library-toolbar select,:root[data-theme="light"] .dola-row input,:root[data-theme="light"] .dola-login-mode select,:root[data-theme="light"] .node-picker select,:root[data-theme="light"] .subscription-editor input{background:#fff;color:#182039;border-color:#ccd7e8}
 :root[data-theme="light"] .setting-row,:root[data-theme="light"] .proxy-box,:root[data-theme="light"] .tool-box,:root[data-theme="light"] .adapter-switches,:root[data-theme="light"] .boss-key,:root[data-theme="light"] .diagnostic-runtime,:root[data-theme="light"] .diagnostic-accounts,:root[data-theme="light"] .migration-preview,:root[data-theme="light"] .migration-report,:root[data-theme="light"] .dola-task-box,:root[data-theme="light"] .dola-create-box,:root[data-theme="light"] .dola-calibration-box,:root[data-theme="light"] .dola-login-mode,:root[data-theme="light"] .fingerprint-box{background:#fff;border-color:#d9e1ef}
-:root[data-theme="light"] .segmented{background:#e8edf6;border-color:#d4deec}
-:root[data-theme="light"] .segmented button.active{background:#fff;color:#182039;box-shadow:0 1px 4px #64748b22}
 :root[data-theme="light"] .modal{background:#f8faff;color:#182039;border-color:#d4deec}
 :root[data-theme="light"] .modal-backdrop{background:#17233b66}
 :root[data-theme="light"] .media-card{background:#fff;border-color:#d9e1ef}
@@ -88,7 +86,7 @@
 :root[data-theme="light"] .inline-status{background:#fff;border-color:#ccd7e8;color:#40516f}
 :root[data-theme="light"] .reference-picker,:root[data-theme="light"] .reference-list span:not(.form-hint),:root[data-theme="light"] .diagnostic-tags{background:#eef3fb;color:#425578}
 :root[data-theme="light"] .dola-point-status,:root[data-theme="light"] .section-heading small,:root[data-theme="light"] .form-hint,:root[data-theme="light"] .diagnostic-muted,:root[data-theme="light"] .diagnostic-account>small{color: var(--ui-muted)}
-:root[data-theme="light"] .top-actions button,:root[data-theme="light"] .account-actions button,:root[data-theme="light"] .media-footer button,:root[data-theme="light"] .settings-list>button,:root[data-theme="light"] .library-toolbar button,:root[data-theme="light"] .group-toolbar button,:root[data-theme="light"] .batch-toolbar button,:root[data-theme="light"] .media-batch button,:root[data-theme="light"] .account-tools button,:root[data-theme="light"] .pagination button,:root[data-theme="light"] .dola-row button,:root[data-theme="light"] .diagnostics-toolbar button,:root[data-theme="light"] .fingerprint-actions button{background:#fff;color:#263653;border-color:#ccd7e8}
+:root[data-theme="light"] .top-actions button,:root[data-theme="light"] .account-actions button,:root[data-theme="light"] .settings-list>button,:root[data-theme="light"] .library-toolbar button,:root[data-theme="light"] .group-toolbar button,:root[data-theme="light"] .batch-toolbar button,:root[data-theme="light"] .media-batch button,:root[data-theme="light"] .account-tools button,:root[data-theme="light"] .pagination button,:root[data-theme="light"] .dola-row button,:root[data-theme="light"] .diagnostics-toolbar button,:root[data-theme="light"] .fingerprint-actions button{background:#fff;color:#263653;border-color:#ccd7e8}
 :root[data-theme="light"] .top-actions button:hover,:root[data-theme="light"] .top-actions button.active{background:#eef0ff;border-color:#9c8cff}
 :root[data-theme="light"] .view-slot.secondary select{background:#fff;color:#182039;border-color:#ccd7e8}
 :root[data-theme="light"] .startup-error{background:#e9eef8;color:#182039}
@@ -1266,28 +1264,21 @@ input:where(:not([type="checkbox"], [type="radio"])), select, textarea { font-si
 .tab-scroll { min-width: 0; align-items: flex-end; padding: 0 8px; }
 .tab { min-width: 142px; max-width: 220px; height: 38px; margin: 8px 4px 0 0; padding: 0 11px; border: 1px solid #d7dce5; border-bottom: 0; border-radius: 10px 10px 0 0; background: #fff; color: #697386; font-size: 12px; }
 .tab.active { background: #eef4ff; border-color: #9db9ef; color: #245dcc; box-shadow: inset 0 2px #2f6bed; }
-.capture-setting { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 16px 18px; padding: 13px; border: 1px solid var(--ui-border); border-radius: 12px; }
-.capture-setting strong { display: block; font-size: 12px; font-weight: 500; }
-.capture-setting small { display: block; margin-top: 5px; color: var(--ui-muted); font-size: 11px; }
 .capture-switch { flex-shrink: 0; width: 36px; height: 22px; border: 0; border-radius: 20px; padding: 3px; background: #667085; cursor: pointer; }
 .capture-switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: white; transition: transform .15s; }
 .capture-switch[aria-checked="true"] span { transform: translateX(14px); }
-.media-batch { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 0 16px 16px; }
-.media-batch button { font-size: 11px; min-height: 31px; }
-.media-footer { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 12px 16px; }
-.media-footer button { min-height: 32px; font-size: 11px; }
 .media-list { padding: 0 16px; }
 .media-card { margin-bottom: 14px; border-radius: 12px; }
 .media-card.video .media-card-actions { position: relative; z-index: 4; top: auto; left: auto; width: auto; transform: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0 0; padding: 8px; border: 1px solid #e1e5ec; border-radius: 14px; background: #fff; box-shadow: 0 8px 22px rgb(20 28 42 / 12%); }
 .media-card.video .media-card-actions button { min-width: 0; min-height: 30px; padding: 6px 7px; border: 1px solid #d7dce5; border-radius: 999px; font-size: 10px; color: #465167; background: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .media-card.video .media-card-actions .media-download-main { grid-column: 1 / -1; color: #fff !important; background: #2f6bed; font-weight: 700; }
-.media-card.video .media-card-actions .media-preview-action, .media-card.video .media-card-actions .media-channel { grid-column: 1 / -1; }
-.media-card.video .media-card-actions .media-preview-action { background: #fff; color: #394355; }
 /* The channel buttons carried three competing palettes across the generations of this
    stylesheet; the two that carried !important are gone from the dash section below, and
    this one - the original saturated blue/purple/teal - is gone with them. Three buttons
    that run the identical download have no identity to colour-code, and at 1.26-2.23:1
-   their labels were unreadable anyway. They inherit the shared secondary treatment. */
+   their labels were unreadable anyway. They inherit the shared secondary treatment.
+   The buttons themselves are gone now too - merged into the single 下载 pill - so nothing
+   is left to colour. */
 .media-card.video .media-info { padding-top: 16px; }
 .empty-browser h1 { font-size: clamp(22px, 2.2vw, 32px); font-weight: 600; letter-spacing: -.03em; }
 .empty-browser p { font-size: 13px; line-height: 1.9; }
@@ -1306,7 +1297,7 @@ input:where(:not([type="checkbox"], [type="radio"])), select, textarea { font-si
 :root[data-theme="light"] body, :root[data-theme="light"] .app-shell { background: #f3f4f7; color: #303746; }
 :root[data-theme="light"] :is(.topbar,.sidebar,.tabs,.modal,.statusbar) { background: #fff; border-color: var(--ui-border); color: #303746; }
 :root[data-theme="light"] :is(.browser-panel,.view-slot,.empty-browser) { background: #f3f4f7; }
-:root[data-theme="light"] :is(.addressbar,.toolbar-menu,.account-tools-toggle,.capture-setting,.setting-row,.tool-box,.browser-settings-box,.dola-task-account) { background: #fafbfc; border-color: var(--ui-border); color: #414b5e; }
+:root[data-theme="light"] :is(.addressbar,.toolbar-menu,.account-tools-toggle,.setting-row,.tool-box,.browser-settings-box,.dola-task-account) { background: #fafbfc; border-color: var(--ui-border); color: #414b5e; }
 :root[data-theme="light"] :is(input:not([type="checkbox"]),select,textarea) { background: #fff; border-color: #dde1e9; color: #303746; }
 :root[data-theme="light"] .toolbar-menu { box-shadow: 0 12px 36px #26334b20; }
 :root[data-theme="light"] .modal-backdrop { background: #3a44566b; }
@@ -1331,7 +1322,7 @@ html[data-platform="windows"] .top-actions { -webkit-app-region: no-drag; }
 
 .tab-count { flex-shrink: 0; padding: 0 9px; color: #7b8493; font-size: 10px; white-space: nowrap; }
 .tab-platform { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 6px; color: #fff; background: #2f6bed; font-size: 10px; font-weight: 700; }
-.media-card.video .media-card-actions button:not(.media-download-main):not(.media-preview-action):not(.media-channel) { background: #fff; color: #465167; border: 1px solid #d7dce5; }
+.media-card.video .media-card-actions button:not(.media-download-main):not(.media-preview-action) { background: #fff; color: #465167; border: 1px solid #d7dce5; }
 .media-card.video .media-card-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .video-notice-card { color: #2f3747; background: #fff; border-color: #c6d6f5; box-shadow: 0 16px 42px rgb(38 51 75 / 18%); }
 .video-notice-content span { color: #697386; }
@@ -1932,25 +1923,6 @@ textarea {
   background: #effaf6;
 }
 
-.capture-setting {
-  margin: 12px 14px 10px;
-  padding: 11px 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: 11px;
-  background: var(--ui-surface-soft);
-}
-
-.capture-setting strong {
-  color: var(--ui-text);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.capture-setting small {
-  color: var(--ui-muted);
-  font-size: 10px;
-}
-
 .capture-switch {
   width: 36px;
   height: 21px;
@@ -1961,29 +1933,7 @@ textarea {
   background: var(--ui-primary);
 }
 
-.segmented {
-  margin: 0 14px 10px;
-  padding: 3px;
-  border: 1px solid var(--ui-border);
-  border-radius: 10px;
-  background: var(--ui-surface-muted);
-}
-
-.segmented button {
-  padding: 7px 6px;
-  border-radius: 7px;
-  color: var(--ui-muted);
-  font-size: 11px;
-}
-
-.segmented button.active {
-  color: #285dcc;
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
-}
-
-.media-batch button,
-.media-footer button {
+.media-batch button {
   min-height: 32px;
   border: 1px solid var(--ui-border-strong);
   border-radius: 9px;
@@ -1993,8 +1943,7 @@ textarea {
   font-weight: 600;
 }
 
-.media-batch button:hover,
-.media-footer button:hover {
+.media-batch button:hover {
   border-color: #9db9ef;
   color: #285dcc;
   background: var(--ui-primary-soft);
@@ -2109,21 +2058,6 @@ textarea {
   background: var(--ui-primary-hover) !important;
 }
 
-.media-card-actions .media-preview-action {
-  grid-column: 1 / -1;
-  color: #285dcc;
-  background: var(--ui-primary-soft);
-}
-
-/* Only the grid placement is live here; the colour declarations that used to sit
-   alongside it lost to the dash layer's channel rules and never painted. */
-.media-card-actions .media-channel {
-  grid-column: auto !important;
-}
-
-.media-card-actions button:not(.media-download-main):not(.media-preview-action):not(.media-channel) {
-  background: var(--ui-surface-soft);
-}
 
 .download-tasks {
   max-height: 136px;
@@ -2148,19 +2082,6 @@ textarea {
   padding: 9px 10px 5px;
   border-top: 1px solid var(--ui-border);
   background: var(--ui-surface-soft);
-}
-
-.media-footer {
-  flex-shrink: 0;
-  gap: 6px;
-  padding: 10px 14px 13px;
-  border-top: 1px solid var(--ui-border);
-  background: var(--ui-surface);
-  box-shadow: 0 -6px 18px rgb(32 48 78 / 4%);
-}
-
-.media-footer button:last-child {
-  grid-column: 1 / -1;
 }
 
 .modal-backdrop {
@@ -2230,6 +2151,28 @@ textarea {
   background: #f8faff;
 }
 
+/* The settings dialog never set a type size for its own content. Every size in it was a leaf
+   patch on one element, so anything a patch forgot fell through to the 16px body size from the
+   base layer, and <small> landed on the UA `smaller` keyword - 13.33px, a value that appears
+   nowhere else in this stylesheet. Measured in the open dialog: of 84 text elements, 42 rendered
+   at 16px and 8 at 13.33px, beside a nav rail this file does set (10px captions, 11px buttons) -
+   so the content column sat ~45% larger than the navigation next to it.
+   12px is the size this dialog already used everywhere a size *was* given - .directory-setting
+   strong, .tool-box label.wide, .form-grid label, and every field control (see the
+   `input:where(...)` rule above, which fixed the same fall-through for controls but not for the
+   text around them). Setting it once on the container puts the un-patched elements on the
+   intended value. Specificity is kept at (0,1,0) so every scoped leaf rule still wins. */
+.settings-list {
+  font-size: 12px;
+}
+
+/* The 13.33px group: `<small>` descriptions with no rule of their own. 11px is this dialog's
+   existing description size (.form-hint, .section-heading small, .directory-setting small), so
+   they join it rather than resolving to 0.8333 x the parent. */
+.settings-list small {
+  font-size: 11px;
+}
+
 .settings-list > label.wide {
   min-height: 64px;
 }
@@ -2242,7 +2185,7 @@ textarea {
 
 .settings-list > label:not(.setting-row) small {
   color: var(--ui-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .settings-list .setting-row,
@@ -2575,8 +2518,7 @@ button > .icon,
   content: '图片';
 }
 
-.media-card-actions .media-download-main,
-.media-card-actions .media-preview-action {
+.media-card-actions .media-download-main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2590,19 +2532,6 @@ button > .icon,
   content: '';
   background: currentColor;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M12 4v10m-4-3 4 4 4-4M5 20h14'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-
-.media-card-actions .media-preview-action::before {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  content: '';
-  background: currentColor;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='5' width='18' height='14' rx='2' fill='none' stroke='black' stroke-width='2'/%3E%3Cpath d='m10 9 5 3-5 3z'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-
-.media-card-actions .media-channel {
-  font-size: 9px;
 }
 
 .media-info > small {
@@ -3234,22 +3163,6 @@ body,
   background: var(--dash-green-soft);
 }
 
-.capture-setting {
-  margin: 13px 14px 10px;
-  padding: 12px 13px;
-  border: 1px solid transparent;
-  border-radius: 16px;
-  background: #fff7cd;
-}
-
-.capture-setting strong {
-  color: var(--dash-ink);
-}
-
-.capture-setting small {
-  color: var(--ui-muted);
-}
-
 .capture-switch {
   background: #c1c7c2;
 }
@@ -3258,33 +3171,7 @@ body,
   background: var(--dash-ink);
 }
 
-.segmented {
-  margin: 0 14px 10px;
-  padding: 4px;
-  border: 0;
-  border-radius: 999px;
-  background: #eef1ed;
-}
-
-.segmented button {
-  padding: 7px 6px;
-  border-radius: 999px;
-  color: var(--dash-muted);
-}
-
-.segmented button.active {
-  color: var(--dash-ink);
-  background: var(--dash-card);
-  box-shadow: var(--dash-shadow-soft);
-}
-
-.media-batch {
-  gap: 6px;
-  padding: 0 14px 11px;
-}
-
-.media-batch button,
-.media-footer button {
+.media-batch button {
   min-height: 33px;
   border: 1px solid var(--dash-line);
   border-radius: 999px;
@@ -3292,8 +3179,7 @@ body,
   background: var(--dash-card);
 }
 
-.media-batch button:hover,
-.media-footer button:hover {
+.media-batch button:hover {
   border-color: transparent;
   color: var(--dash-ink);
   background: var(--dash-yellow-soft);
@@ -3369,27 +3255,13 @@ body,
   background: #000 !important;
 }
 
-.media-card-actions .media-preview-action {
-  color: var(--dash-ink);
-  background: #f7f9f6;
-}
-
 /* Channels used to be painted in `--dash-yellow-soft` - the hover colour declared
    for every other button in this card - so all three sat in a permanent hover state
    and out-shouted the primary action, with a second yellow and a green distinguishing
    three buttons that run the same download. They now inherit the shared secondary
    treatment and hover like their siblings, which leaves the dark ink pill as the only
-   loud thing on the card.
+   loud thing on the card. */
 
-   Grouping is positional instead: the utility buttons follow 下载/预览/渠道 in the DOM,
-   so forcing the first one onto a fresh row keeps 打开链接 and 复制链接 out of the
-   channel grid. Without it the 2-column flow put 3渠道下载 and 打开链接 side by side
-   and left 复制链接 alone on a half-empty row. */
-.media-card-actions
-  :is(.media-download-main, .media-preview-action, .media-channel)
-  + button:not(.media-download-main):not(.media-preview-action):not(.media-channel) {
-  grid-column-start: 1;
-}
 
 .task-queue-header,
 .download-tasks {
@@ -3415,12 +3287,22 @@ body,
   border-bottom-color: var(--dash-line);
 }
 
-.media-footer {
-  gap: 7px;
-  padding: 11px 14px 14px;
-  border-top: 1px solid var(--dash-line);
-  background: var(--dash-card);
-  box-shadow: none;
+/* The cancel/retry controls are icons now rather than a `×` and a `重试` string, so they need a
+   box of their own - a bare glyph inherits the base layer's `background:#ffffff0a` plus whatever
+   padding the UA gives a button, which is not a consistent target at two different glyph widths. */
+.download-tasks button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--dash-muted);
+  background: transparent;
+}
+
+.download-tasks button:hover {
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
 }
 
 .modal-backdrop {
@@ -3966,6 +3848,119 @@ body,
 
 .media-list {
   padding: 0 12px;
+}
+
+/* --- captured-media chrome ------------------------------------------------ */
+
+/* Three utilities moved from a 99px footer into the title, and the type filter and the
+   图片解析 switch are gone from the panel (the switch is a setting now). The panel kept
+   72px of title and one 41px batch row, and handed the ~240px that came back to the list.
+
+   These are deliberately not the filled yellow circle the accounts panel uses for its one
+   primary action: three of them beside the count badge would read as three primaries. */
+.media-panel-title .icon-button {
+  width: 28px;
+  height: 28px;
+  color: var(--dash-ink);
+  background: transparent;
+}
+
+.media-panel-title .icon-button:hover {
+  background: var(--dash-yellow-soft);
+}
+
+.media-panel-title .icon-button:disabled {
+  color: var(--ui-muted);
+  background: transparent;
+}
+
+/* One row of chips instead of the 2x2 grid the four buttons used to fill. `auto` basis
+   rather than a fixed fraction so the three default buttons stay on one line and the
+   optional 下载全部图片 - which only appears once the setting is on - wraps below
+   instead of squeezing every label. */
+.media-batch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 11px;
+}
+
+.media-batch button {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 30px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* --- media card secondary actions ----------------------------------------- */
+
+/* Each card used to render up to eight same-weight buttons under the thumbnail, in a
+   2-column grid that ran to six rows. The download pill is the only one left in the row;
+   the rest moved here.
+
+   They stay in the DOM rather than being deleted: the smoke contract clicks the 候选地址
+   selector, and the preview and the candidate list are real second paths into a resource.
+   The menu is revealed by .media-card:hover / :focus-within, the same idiom as .card-menu
+   on the account rows, which keeps it keyboard reachable - focus on the checkbox, the
+   thumbnail or the download button is enough.
+
+   The three 1/2/3渠道下载 buttons that used to fill most of this grid are gone: they all ran
+   the identical download, so they were a choice with nothing behind it (see App.tsx). What
+   remains is three or four genuinely distinct actions.
+
+   Positioned against the card, not against .media-card-actions: the action row sits below
+   the title and metadata, so an overlay anchored there would cover the text instead of the
+   picture. 40px clears the 素材/视频 badge, which is pinned at top:10 with a 21px box.
+   Everything stays inside the card because .media-card is overflow:hidden. */
+.media-card-menu {
+  display: none;
+  position: absolute;
+  z-index: 5;
+  top: 40px;
+  right: 10px;
+  left: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--dash-line);
+  border-radius: 12px;
+  background: var(--dash-card);
+  box-shadow: var(--dash-shadow);
+}
+
+.media-card:hover .media-card-menu,
+.media-card:focus-within .media-card-menu {
+  display: grid;
+}
+
+/* Declared here rather than inherited: every button rule that used to style these is
+   scoped to .media-card-actions, which the menu is deliberately outside of. */
+.media-card-menu button {
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 7px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: var(--dash-card);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-card-menu button:hover {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+}
+
+.media-card-menu .media-preview-action {
+  color: var(--dash-ink);
+  background: #f7f9f6;
 }
 
 /* The preview is an image, not a card: a small radius reads as an image edge, where the

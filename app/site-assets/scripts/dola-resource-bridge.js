@@ -31,8 +31,6 @@
   var candidateKeyPattern = /^(?:main_url|mainurl|play_url|playurl|video_url|videourl|download_url|downloadurl|origin_url|original_url|raw_url|source_url|media_url|mediaUrl|fplay_url|fplayUrl|no[_-]?watermark(?:[_-]?url)?|watermark[_-]?free[_-]?url|unwatermarked[_-]?url|backup_url|backupUrl|url)$/i;
   var qualityKeyPattern = /(?:no[_-]?watermark|without[_-]?watermark|original|origin|raw|source|download|main_url|play_url)/i;
   var scriptStyleId = 'aiam-dola-resource-bridge-style';
-  var panelId = 'aiam-dola-resource-panel';
-  var toggleId = 'aiam-dola-resource-toggle';
   var videoOverlayMap = new Map();
   var videoElementCounter = 0;
 
@@ -410,11 +408,10 @@
     }
     records.unshift(pending);
     if (records.length > MAX_RECORDS) records.length = MAX_RECORDS;
-    // Keep the old central resource-panel behavior: a visible card may exist
-    // before Dola exposes its final playable URL. Main Process retains this
-    // locator-only record and the user can ask the page to resolve it.
+    // A card may exist before Dola exposes its final playable URL. The locator-only
+    // record still reaches Main Process, and 解析原始 on the workbench's media card asks
+    // this page to resolve it later.
     postRecord(pending);
-    renderPanel();
     return pending;
   }
 
@@ -517,7 +514,6 @@
     records.unshift(item);
     if (records.length > MAX_RECORDS) records.length = MAX_RECORDS;
     postRecord(item);
-    renderPanel();
     return item;
   }
 
@@ -1483,18 +1479,13 @@
     if (document.getElementById(scriptStyleId)) return;
     var style = document.createElement('style');
     style.id = scriptStyleId;
-    style.textContent = '#'+toggleId+'{position:fixed;right:18px;bottom:76px;z-index:2147483646;border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:9px 13px;background:#111827;color:#f8fafc;font:600 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.28);cursor:pointer}#'+toggleId+':hover{background:#263247}#'+panelId+'{position:fixed;right:18px;bottom:122px;z-index:2147483645;width:330px;max-height:52vh;overflow:auto;border:1px solid rgba(148,163,184,.28);border-radius:16px;padding:12px;background:rgba(15,23,42,.97);color:#e5e7eb;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 18px 50px rgba(0,0,0,.38);display:none}#'+panelId+'.open{display:block}#'+panelId+' .aiam-dola-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}#'+panelId+' .aiam-dola-head strong{font-size:13px}#'+panelId+' .aiam-dola-muted{color:#94a3b8}#'+panelId+' .aiam-dola-item{padding:9px 0;border-top:1px solid rgba(148,163,184,.17)}#'+panelId+' .aiam-dola-item:first-child{border-top:0}#'+panelId+' .aiam-dola-title{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}#'+panelId+' .aiam-dola-meta{display:block;color:#94a3b8;font-size:11px;margin-bottom:7px}#'+panelId+' button{border:1px solid rgba(148,163,184,.28);border-radius:7px;padding:5px 8px;background:#1e293b;color:#e5e7eb;cursor:pointer;margin-right:5px}#'+panelId+' button:hover{background:#334155}#'+panelId+' .aiam-dola-primary{background:#2563eb;border-color:#2563eb}';
-    style.textContent += '.aiam-dola-video-overlay{position:absolute;right:10px;bottom:10px;z-index:2147483644;display:none;flex-direction:column;gap:6px;width:188px;padding:9px;border:1px solid rgba(255,255,255,.2);border-radius:14px;background:linear-gradient(145deg,rgba(8,13,24,.9),rgba(15,23,42,.8));box-shadow:0 14px 34px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(15px) saturate(1.25);-webkit-backdrop-filter:blur(15px) saturate(1.25);font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.aiam-dola-video-overlay-title{color:#f8fafc;font-weight:700;font-size:11px;letter-spacing:.03em}.aiam-dola-video-overlay-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}.aiam-dola-video-overlay button{min-width:0;padding:5px 4px;border:1px solid rgba(148,163,184,.32);border-radius:7px;background:rgba(30,41,59,.86);color:#e5e7eb;font:600 10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.aiam-dola-video-overlay button:hover:not(:disabled){background:#334155;border-color:rgba(255,255,255,.42)}.aiam-dola-video-overlay button:disabled{opacity:.45;cursor:not-allowed}.aiam-dola-video-overlay .aiam-dola-overlay-primary{background:linear-gradient(135deg,#2563eb,#4f46e5);border-color:#4f46e5;color:#fff}.aiam-dola-video-overlay .aiam-dola-error{background:#7f1d1d;border-color:#ef4444;color:#fee2e2}';
+    style.textContent = '.aiam-dola-video-overlay{position:absolute;right:10px;bottom:10px;z-index:2147483644;display:none;flex-direction:column;gap:6px;width:188px;padding:9px;border:1px solid rgba(255,255,255,.2);border-radius:14px;background:linear-gradient(145deg,rgba(8,13,24,.9),rgba(15,23,42,.8));box-shadow:0 14px 34px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(15px) saturate(1.25);-webkit-backdrop-filter:blur(15px) saturate(1.25);font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.aiam-dola-video-overlay-title{color:#f8fafc;font-weight:700;font-size:11px;letter-spacing:.03em}.aiam-dola-video-overlay-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px}.aiam-dola-video-overlay button{min-width:0;padding:5px 4px;border:1px solid rgba(148,163,184,.32);border-radius:7px;background:rgba(30,41,59,.86);color:#e5e7eb;font:600 10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.aiam-dola-video-overlay button:hover:not(:disabled){background:#334155;border-color:rgba(255,255,255,.42)}.aiam-dola-video-overlay button:disabled{opacity:.45;cursor:not-allowed}.aiam-dola-video-overlay .aiam-dola-overlay-primary{background:linear-gradient(135deg,#2563eb,#4f46e5);border-color:#4f46e5;color:#fff}.aiam-dola-video-overlay .aiam-dola-error{background:#7f1d1d;border-color:#ef4444;color:#fee2e2}';
     (document.head || document.documentElement).appendChild(style);
   }
 
-  function button(text, className, handler) {
-    var node = document.createElement('button');
-    node.type = 'button'; node.textContent = text; node.className = className || '';
-    node.addEventListener('click', function (event) { event.preventDefault(); event.stopPropagation(); handler(); });
-    return node;
-  }
-
+  // The page-side panel that used to call this is gone; the workbench's media card and this
+  // page's own inbound resolve message are the only callers now. The `source` tag keeps its
+  // historical value because records already written carry it and the smoke fixtures key on it.
   function download(item) {
     window.postMessage({ type: 'electronDownload', data: {
       type: 'video', url: item.videoUrl, backupUrl: item.backupUrl, alternateUrls: item.alternateUrls, thumbUrl: item.coverUrl,
@@ -1505,74 +1496,6 @@
       fplayUrl: item.fplayUrl, dolaRecordKey: item.dolaRecordKey, dolaCardId: item.dolaCardId,
       dolaVideoElementId: item.dolaVideoElementId
     } }, '*');
-  }
-
-  function openOriginal(item) {
-    if (item && item.videoUrl) {
-      window.open(item.videoUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    if (!item || item.resolving) return;
-    item.resolving = true;
-    item.resolveError = '';
-    renderPanel();
-    resolveRecord(item).then(function (resolved) {
-      item.resolving = false;
-      if (!resolved || !resolved.videoUrl) throw new Error('当前作品还没有解析出平台原始视频');
-      window.open(resolved.videoUrl, '_blank', 'noopener,noreferrer');
-      renderPanel();
-    }).catch(function (error) {
-      item.resolving = false;
-      item.resolveError = error && error.message ? error.message : '解析失败';
-      renderPanel();
-    });
-  }
-
-  function renderPanel() {
-    var panel = document.getElementById(panelId);
-    var toggle = document.getElementById(toggleId);
-    if (!panel || !toggle) return;
-    toggle.textContent = 'Dola 资源 ' + (records.length ? '(' + records.length + ')' : '');
-    while (panel.firstChild) panel.removeChild(panel.firstChild);
-    var head = document.createElement('div'); head.className = 'aiam-dola-head';
-    var title = document.createElement('strong'); title.textContent = '页面资源'; head.appendChild(title);
-    var refresh = button('重新扫描', '', function () { collectPageState(); collectDom(); }); head.appendChild(refresh); panel.appendChild(head);
-    var hint = document.createElement('div'); hint.className = 'aiam-dola-muted'; hint.textContent = '只显示当前登录页面已暴露的候选资源；下载由工作台统一处理。'; panel.appendChild(hint);
-    if (!records.length) { var empty = document.createElement('div'); empty.className = 'aiam-dola-muted'; empty.style.padding = '18px 0 8px'; empty.textContent = '尚未捕获视频，完成生成或打开作品后再试。'; panel.appendChild(empty); return; }
-    records.slice(0, 24).forEach(function (item) {
-      var row = document.createElement('div'); row.className = 'aiam-dola-item';
-      var itemTitle = document.createElement('strong'); itemTitle.className = 'aiam-dola-title'; itemTitle.textContent = item.title || 'Dola 视频'; row.appendChild(itemTitle);
-      var meta = document.createElement('span'); meta.className = 'aiam-dola-meta'; meta.textContent = (item.confirmedNoWatermark ? '平台原始候选' : '页面直接候选') + ' · ' + (item.qualityEvidence || 'unknown') + (item.resolveError ? ' · ' + item.resolveError : ''); row.appendChild(meta);
-      row.appendChild(button(item.resolving ? '解析中…' : '解析原始', '', function () {
-        if (item.resolving) return;
-        item.resolving = true;
-        item.resolveError = '';
-        renderPanel();
-        resolveRecord(item).then(function () {
-          item.resolving = false;
-          renderPanel();
-        }).catch(function (error) {
-          item.resolving = false;
-          item.resolveError = error && error.message ? error.message : '解析失败';
-          renderPanel();
-        });
-      }));
-      var downloadButton = button(item.videoUrl ? '下载' : '等待地址', 'aiam-dola-primary', function () { download(item); });
-      downloadButton.disabled = !item.videoUrl;
-      row.appendChild(downloadButton);
-      row.appendChild(button(item.resolving ? '解析中…' : (item.videoUrl ? '打开链接' : '解析并打开'), '', function () { openOriginal(item); }));
-      row.appendChild(button('复制链接', '', function () { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(item.videoUrl).catch(function () { /* permission denied */ }); }));
-      panel.appendChild(row);
-    });
-  }
-
-  function installUi() {
-    if (!document.body || document.getElementById(toggleId)) return;
-    installStyle();
-    var toggle = document.createElement('button'); toggle.id = toggleId; toggle.type = 'button'; toggle.textContent = 'Dola 资源';
-    var panel = document.createElement('section'); panel.id = panelId; panel.setAttribute('aria-label', 'Dola 页面资源');
-    toggle.addEventListener('click', function () { panel.classList.toggle('open'); renderPanel(); });
-    document.body.appendChild(toggle); document.body.appendChild(panel); renderPanel();
   }
 
   function bounded(value, limit) {
@@ -1614,7 +1537,7 @@
     if (event.source !== window || !event.data || typeof event.data !== 'object') return;
     var payload = event.data;
     if (payload.type === 'AIAM_ALT_ORIGINAL_MEDIA_FOUND') {
-      if (rememberLegacyOriginalMedia(payload.items)) renderPanel();
+      rememberLegacyOriginalMedia(payload.items);
       return;
     }
     if (payload.type === 'AIAM_DOLA_RESOURCE_DOWNLOAD') {
@@ -1625,11 +1548,9 @@
       resolveRecord(downloadTarget).then(function (resolved) {
         if (!resolved || !resolved.videoUrl) throw new Error('当前作品还没有解析出可下载视频');
         download(resolved);
-        renderPanel();
       }).catch(function (error) {
         var current = findRecord(downloadHint);
         if (current) current.resolveError = error && error.message ? error.message : '下载解析失败';
-        renderPanel();
       });
       return;
     }
@@ -1640,17 +1561,15 @@
     var target = Object.assign({}, record, hint);
     resolveRecord(target).then(function (resolved) {
       if (payload.downloadAfterResolve && resolved && resolved.videoUrl) download(resolved);
-      renderPanel();
     }).catch(function (error) {
       var current = findRecord(hint);
       if (current) current.resolveError = error && error.message ? error.message : '解析失败';
-      renderPanel();
     });
   });
 
   function scheduleScan() {
     if (scanTimer) return;
-    scanTimer = window.setTimeout(function () { scanTimer = 0; collectPageState(); collectDom(); scanGeneratedVideoNotices(); installUi(); }, 250);
+    scanTimer = window.setTimeout(function () { scanTimer = 0; collectPageState(); collectDom(); scanGeneratedVideoNotices(); installStyle(); }, 250);
   }
 
   var mutationObserverStarted = false;
@@ -1675,5 +1594,5 @@
     scheduleScan();
     startMutationObserver();
   }
-  window.setInterval(function () { collectDom(); scanGeneratedVideoNotices(); installUi(); }, 3000);
+  window.setInterval(function () { collectDom(); scanGeneratedVideoNotices(); installStyle(); }, 3000);
 })();

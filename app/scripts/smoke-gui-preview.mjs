@@ -330,6 +330,21 @@ async function main() {
           return color === 'rgb(11,17,32)' || color === 'rgba(11,17,32,1)';
         });
         if (!legacyRows.length || darkRows.length) throw new Error('settings legacy rows are not on the light surface: ' + JSON.stringify({ rows: legacyRows.length, darkRows: darkRows.length }));
+        // The 图片解析 switch lives here now instead of in the 下载区 panel. The claim is
+        // unchanged - image parsing defaults off and the switch round-trips through
+        // settings.update - but it is asserted where the control is, and the batch row
+        // underneath is checked to prove the setting actually reaches the panel.
+        const imageBatchButton = () => [...document.querySelectorAll('.media-batch button')].some((node) => node.textContent?.trim() === '下载全部图片');
+        const imageSwitch = document.querySelector('[role="switch"][aria-label="图片解析"]');
+        if (!imageSwitch) throw new Error('image parsing switch is missing from 设置');
+        if (imageSwitch.getAttribute('aria-checked') !== 'false') throw new Error('image parsing must default off');
+        if (imageBatchButton()) throw new Error('the image batch action rendered while image parsing is off');
+        imageSwitch.click();
+        await waitFor(() => imageSwitch.getAttribute('aria-checked') === 'true', 'image parsing did not enable');
+        await waitFor(imageBatchButton, 'enabling image parsing did not add the image batch action');
+        imageSwitch.click();
+        await waitFor(() => imageSwitch.getAttribute('aria-checked') === 'false', 'image parsing did not disable');
+        await waitFor(() => !imageBatchButton(), 'disabling image parsing did not remove the image batch action');
         const navLabels = [...document.querySelectorAll('.settings-nav button')].map((node) => node.textContent?.trim()).filter(Boolean);
         if (!navLabels.includes('下载') || !navLabels.includes('浏览器') || !navLabels.includes('插件')) throw new Error('settings section navigation did not render: ' + JSON.stringify(navLabels));
         const navRects = [...document.querySelectorAll('.settings-nav button')].map((node) => node.getBoundingClientRect());
@@ -440,8 +455,12 @@ async function main() {
     if (!tabContextItems.includes('关闭其他标签') || !tabContextItems.includes('关闭此标签')) throw new Error('tab context actions incomplete: ' + JSON.stringify(tabContextItems));
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await waitFor(() => !document.querySelector('.tab-context-menu'), 'Escape did not close tab context menu');
-    const channelButtons = document.querySelectorAll('.media-channel');
-    if (channelButtons.length < 3 || !document.querySelector('.media-download-main') || !document.querySelector('.media-preview-action')) throw new Error('V5.2 download actions did not render');
+    // The three 1/2/3渠道下载 buttons were merged into the single 下载 pill: they all called
+    // download(resource) with no channel argument, so the number only ever chose a colour.
+    // Asserting their absence is the point of the merge - a regression that reintroduces a
+    // fake choice should fail here, not pass silently.
+    if (document.querySelector('.media-channel')) throw new Error('the merged-away channel download buttons came back');
+    if (!document.querySelector('.media-download-main') || !document.querySelector('.media-preview-action')) throw new Error('V5.2 download actions did not render');
     const candidateButton = [...document.querySelectorAll('.media-card button')].find((node) => node.textContent?.trim() === '候选地址 3');
     if (!candidateButton) throw new Error('media candidate selector did not render');
     candidateButton.click();
@@ -488,12 +507,6 @@ async function main() {
     };
     const libraryRefresh = await checkLibraryAutoRefresh();
     modalChecks.push('素材库');
-    const imageSwitch = document.querySelector('[role="switch"][aria-label="图片解析"]');
-    if (!imageSwitch || imageSwitch.getAttribute('aria-checked') !== 'false') throw new Error('image parsing must default off');
-    imageSwitch.click();
-    await waitFor(() => imageSwitch.getAttribute('aria-checked') === 'true', 'image parsing did not enable');
-    imageSwitch.click();
-    await waitFor(() => imageSwitch.getAttribute('aria-checked') === 'false', 'image parsing did not disable');
     modalChecks.push(await checkToolModal('登录辅助', '打开登录浏览器'));
     const dolaTaskChecks = await checkDolaTaskModal();
     modalChecks.push('Dola 批量登录');

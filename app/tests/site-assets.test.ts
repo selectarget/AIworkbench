@@ -46,9 +46,15 @@ describe('Dola page bridge asset', () => {
     expect(source).toContain('dola-native-video-toast');
     expect(source).toContain('__dolaVideoLinkNativeDownloadInstalled');
     expect(source).toContain('/video/tos/');
-    expect(source).toContain('解析并打开');
-    expect(source).toContain("window.open(item.videoUrl, '_blank'");
-    expect(source).toContain('解析原始');
+    // The page-side 资源 panel and its toggle are gone: the workbench's media card already
+    // offers the same actions, so a control surface floating over the site duplicated them.
+    // What those buttons fronted is unchanged - the inbound resolve channel above, and the
+    // per-video overlay below - so pin both directions and let a re-introduced panel show up
+    // as a deliberate diff instead of drift.
+    expect(source).not.toContain('aiam-dola-resource-panel');
+    expect(source).not.toContain('aiam-dola-resource-toggle');
+    expect(source).toContain('解析并下载');
+    expect(source).toContain('复制地址');
     expect(source).toContain('videoGeneratedNotice');
     expect(source).toContain('scanGeneratedVideoNotices');
     expect(source).not.toContain('chrome.downloads');
