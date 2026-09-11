@@ -2,6 +2,8 @@
 
 > 当前校准（2026-08-28）：源码回归为 36 个测试文件、267/267 项通过；Windows x64 portable 已重新封装，大小 195,931,887 字节，SHA-256 为 `C825BA3EB3DA72B561B2368555272CBEBF506A4BF0FA8FECC24E4C8D0832D86F`，并通过包审计、原生资源校验和 6 秒启动 smoke；GUI smoke 还确认 Dola 批量登录弹窗无横向溢出，Dola 页面桥的编码媒体地址已进入统一媒体消息链路，发布配置回归确认 macOS x64/arm64 签名发布步骤完整。
 
+> 本轮界面与下载对齐回归：36 个测试文件、273/273 项通过；另有 1080/1440 GUI smoke 和原生 WebContentsView 遮挡 smoke。
+
 这是 Electron + React + TypeScript 的跨平台重建工程，目标平台为 Windows x64、macOS Intel 和 macOS Apple Silicon。终端用户不需要安装 .NET；Electron 会携带 Chromium 和 Node.js 运行时。应用级卡密、激活码、机器绑定和到期校验不属于本工程的启动链路；账号登录仍由各目标网站自己的登录流程处理。
 
 完整的技术架构、数据隔离、V4.4 对照和迁移路线请先阅读：[`../ARCHITECTURE.md`](../ARCHITECTURE.md)。

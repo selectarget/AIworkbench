@@ -1,0 +1,4002 @@
+/* ==============================================================================
+   Workbench UI - the single stylesheet.
+   ==============================================================================
+
+   This file is the only CSS layer the renderer loads (see main.tsx). It was
+   assembled by concatenating the three former layers in their original cascade
+   order, which is result-preserving: with no @import/@layer involved, cascade ties
+   are decided by source order alone, so the concatenation renders identically to
+   the previous three-file scheme.
+
+   Sections below, in cascade order (later wins on a tie):
+
+     1. Foundations - reset, tokens and base elements   (was styles.css)
+     2. Layout - sizing, overflow and scroll roots      (was layout-fixes.css)
+     3. Workspace - surfaces, panels, progressive disclosure (was workspace.css)
+        ...and within it, last, the design tokens that own the final visual language.
+
+   Edit the later sections to override earlier ones; do not reintroduce parallel
+   stylesheets. */
+
+/* ==============================================================================
+   Foundations - reset, tokens and base elements
+   ============================================================================== */
+
+:root{font-family:Inter,"Microsoft YaHei",system-ui,sans-serif;color:#dce6ff;background:#080d1a;font-synthesis:none}*{box-sizing:border-box}body{margin:0;overflow:hidden}button,input,select{font:inherit}button{color:inherit}.app-shell{height:100vh;background:radial-gradient(circle at 45% -20%,#243764 0,transparent 38%),#080d1a;display:flex;flex-direction:column}.topbar{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 18px 0 20px;border-bottom:1px solid #ffffff12;background:#0b1121e8}.brand{display:flex;align-items:center;gap:12px}.brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#7c5cff,#3ea7ff);font-weight:900;box-shadow:0 8px 30px #6d5cff55}.brand div:last-child{display:flex;flex-direction:column}.brand span{font-size:11px;color:#7f8dab;margin-top:2px}.top-actions{display:flex;gap:7px}.top-actions button,.account-actions button,.media-footer button,.settings-list>button,.library-toolbar button{border:1px solid #ffffff14;background:#ffffff08;border-radius:9px;padding:8px 12px;cursor:pointer}.top-actions button:hover,.top-actions button.active{background:#735cff22;border-color:#816dff77}.workspace{flex:1;min-height:0;display:grid;grid-template-columns:264px minmax(480px,1fr) 306px}.sidebar{min-width:0;background:#0b1121dc;display:flex;flex-direction:column}.accounts-panel{border-right:1px solid #ffffff10}.media-panel{border-left:1px solid #ffffff10}.panel-title{height:75px;padding:16px;display:flex;align-items:center;justify-content:space-between}.panel-title h2{font-size:18px;margin:2px 0}.eyebrow{font-size:9px;letter-spacing:.19em;color:#7180a2}.icon-button{border:0;border-radius:11px;width:36px;height:36px;font-size:22px;cursor:pointer}.primary{background:linear-gradient(135deg,#6349e8,var(--ui-primary))!important;color:#fff!important;border:0!important}.search{margin:0 14px 10px;background:#080d19;border:1px solid #ffffff12;border-radius:10px;padding:10px 12px;color:inherit;outline:none}.search:focus,input:focus,select:focus{border-color:#745cffaa;box-shadow:0 0 0 3px #745cff18}.account-actions{display:flex;gap:8px;padding:0 14px 12px}.account-actions button{flex:1;padding:7px}.account-list{overflow:auto;padding:0 9px;flex:1}.account-card{display:flex;align-items:center;border:1px solid transparent;border-radius:12px;margin-bottom:5px}.account-card:hover,.account-card.selected{background:#ffffff08;border-color:#ffffff0e}.account-card.selected{background:linear-gradient(90deg,#725cff1e,#ffffff05);border-color:#745cff44}.account-main{border:0;background:none;display:flex;align-items:center;gap:10px;padding:9px;flex:1;min-width:0;text-align:left;cursor:pointer}.account-main>span:last-child{display:flex;flex-direction:column;min-width:0}.account-main strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.account-main small,.media-info small,.file-row small{color:#7683a1;margin-top:3px}.platform-dot{width:33px;height:33px;display:grid;place-items:center;border-radius:11px;background:#234;color:white;font-weight:700}.platform-dot.doubao{background:linear-gradient(135deg,#446bff,#7e4dff)}.platform-dot.qianwen{background:linear-gradient(135deg,#672bda,#d045ff)}.platform-dot.dola{background:linear-gradient(135deg,#12a581,#48d9b8)}.platform-dot.jimeng{background:linear-gradient(135deg,#e74a7f,#ff9362)}.card-menu{display:flex}.card-menu button{border:0;background:none;color:#65708b;cursor:pointer;padding:5px}.panel-footer{padding:11px 15px;border-top:1px solid #ffffff0d;color:#64718e;font-size:11px}.browser-panel{display:flex;flex-direction:column;min-width:0;min-height:0;background:#070b14}.tabs{height:42px;display:flex;border-bottom:1px solid #ffffff10;background:#0b1020}.tab-scroll{display:flex;overflow:auto;flex:1}.tab{min-width:120px;max-width:190px;display:flex;justify-content:space-between;align-items:center;border:0;border-right:1px solid #ffffff0b;background:transparent;padding:0 10px;color:#7e8aa5;cursor:pointer}.tab span{overflow:hidden;text-overflow:ellipsis}.tab.active{color:#edf2ff;background:#121a30;box-shadow:inset 0 2px #785eff}.connection-state{display:flex;align-items:center;padding:0 13px;font-size:10px;color:#4bd6a4}.view-grid{flex:1;min-height:0;display:grid}.view-grid.dual{grid-template-columns:1fr 1fr;gap:2px;background:#705cff}.view-slot{position:relative;min-width:0;min-height:0;background:#090e1b}.view-slot.secondary select{position:absolute;z-index:5;top:8px;right:8px;background:#121a2c;color:#dce6ff;border:1px solid #ffffff22;border-radius:8px;padding:6px}.empty-browser{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px;background:radial-gradient(circle at center,#172345,transparent 55%)}.empty-browser .orb{font-size:37px;color:#8c72ff;margin-bottom:22px}.empty-browser h1{font-size:30px;max-width:570px;margin:10px}.empty-browser p{max-width:520px;color:#8491ae}.empty-browser button{border-radius:12px;padding:11px 18px;margin-top:12px}.statusbar{height:25px;background:#0a0f1c;border-top:1px solid #ffffff0d;color: var(--ui-muted);font-size:10px;display:flex;align-items:center;padding:0 10px;gap:7px}.status-dot{width:6px;height:6px;border-radius:50%;background:#40d5a0;box-shadow:0 0 8px #40d5a0}.count-badge{background:#745cff2b;color:#a99aff;border-radius:99px;padding:4px 9px}.segmented{display:flex;background:#070c17;border:1px solid #ffffff0e;border-radius:10px;padding:3px;margin:0 14px 12px}.segmented button{flex:1;border:0;background:none;border-radius:7px;padding:7px;color:#74809b;cursor:pointer}.segmented button.active{background:#202945;color:#fff}.media-list{flex:1;overflow:auto;padding:0 10px}.media-card{background:#0f1728;border:1px solid #ffffff0d;border-radius:12px;margin-bottom:9px;overflow:hidden}.media-preview{height:128px;background:#070a12;display:grid;place-items:center;color:#9c8bff;font-size:24px}.media-preview img{width:100%;height:100%;object-fit:cover}.media-info{padding:10px;display:flex;flex-direction:column}.media-info strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.media-info button{align-self:flex-end;margin-top:8px;border:0;background:#725cff;color:white;border-radius:8px;padding:6px 9px;cursor:pointer}.empty-list{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#687592;padding:25px}.empty-list span{font-size:30px}.empty-list strong{color:#a7b2ca;margin-top:10px}.empty-list p{font-size:12px;line-height:1.6}.media-footer{padding:10px;border-top:1px solid #ffffff0d}.media-footer button{width:100%}.modal-backdrop{position:fixed;z-index:9999;inset:0;background:#02050bbd;backdrop-filter:blur(9px);display:grid;place-items:center}.modal{width:min(630px,92vw);max-height:88vh;background:#11182a;border:1px solid #ffffff17;border-radius:17px;box-shadow:0 30px 90px #000a;display:flex;flex-direction:column}.modal.wide{width:min(920px,92vw)}.modal>header,.modal>footer{padding:15px 19px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff0e}.modal>header h2{margin:0;font-size:18px}.modal>header button{border:0;background:none;font-size:25px;cursor:pointer}.modal-body{padding:19px;overflow:auto}.modal>footer{border-top:1px solid #ffffff0e;border-bottom:0;justify-content:flex-end;gap:8px}.modal>footer button{border:1px solid #ffffff1c;background:#ffffff0a;border-radius:9px;padding:8px 15px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.form-grid label{display:flex;flex-direction:column;gap:6px;color: var(--ui-muted);font-size:12px}.form-grid .wide{grid-column:1/-1}.form-grid input,.form-grid select,.proxy-box input,.proxy-box select{width:100%;background:#080d19;border:1px solid #ffffff16;border-radius:9px;color:#e2e9f8;padding:9px;outline:none}.proxy-box{margin-top:16px;background:#0b1120;border-radius:12px;padding:13px}.switch-row{display:flex;align-items:center;gap:8px}.switch-row input{width:auto}.form-grid.proxy{margin-top:12px;grid-template-columns:110px 1fr 90px 1fr 1fr}.settings-list{display:flex;flex-direction:column;gap:8px}.setting-row{display:flex;align-items:center;justify-content:space-between;padding:13px;background:#0b1120;border-radius:11px}.setting-row span{display:flex;flex-direction:column}.setting-row small{color: var(--ui-muted);margin-top:4px;max-width:430px;overflow:hidden;text-overflow:ellipsis}.setting-row input{accent-color:#765cff;width:18px;height:18px}.library-toolbar{display:flex;justify-content:space-between;margin-bottom:10px}.file-row{display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:10px;padding:10px;border-bottom:1px solid #ffffff0c}.file-row>span:nth-child(2){display:flex;flex-direction:column;min-width:0}.file-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-row button{border:0;background:#ffffff09;color:#aab5cd;border-radius:7px;padding:6px 8px;margin-left:4px}.file-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:#263252}.file-icon.video{background:#4e2d6e}.file-icon.image{background:#1d5e61}[data-theme="light"] :root{color:#182039}[data-theme="light"] .app-shell{background:#e9eef8;color:#1c2741}[data-theme="light"] .topbar,[data-theme="light"] .sidebar,[data-theme="light"] .tabs{background:#f8faff;color:#1c2741}[data-theme="light"] .browser-panel,[data-theme="light"] .view-slot{background:#edf1f8}@media(max-width:1180px){.workspace{grid-template-columns:230px minmax(440px,1fr) 270px}.form-grid.proxy{grid-template-columns:1fr 1fr}.top-actions button{padding:7px}}
+/* A visible fallback is preferable to an empty dark window if preload startup fails. */
+.startup-error { min-height: 100vh; display: grid; place-items: center; padding: 32px; background: #0b1020; color: #e5e7eb; }
+.startup-error section { width: min(560px, 100%); padding: 28px; border: 1px solid #334155; border-radius: 16px; background: #111827; box-shadow: 0 24px 60px rgb(0 0 0 / 35%); }
+.startup-error h1 { margin: 0 0 12px; font-size: 24px; }
+.startup-error p { margin: 0 0 16px; color: #cbd5e1; line-height: 1.7; }
+.startup-error code { color: #fca5a5; }
+.group-toolbar,.batch-toolbar,.media-batch{display:flex;gap:5px;padding:0 14px 8px}.group-toolbar select{min-width:0;flex:1;background:#080d19;border:1px solid #ffffff12;border-radius:8px;color:inherit;padding:6px}.group-toolbar button,.batch-toolbar button,.media-batch button,.account-tools button,.pagination button,.dola-row button{border:1px solid #ffffff14;background:#ffffff08;border-radius:7px;color:inherit;padding:6px 8px;cursor:pointer}.batch-toolbar button{flex:1;font-size:11px}.account-check{margin-left:5px;accent-color:#765cff}.media-batch{padding-bottom:10px}.media-card>input{position:absolute;margin:8px;z-index:2;accent-color:#765cff}.download-tasks{border-top:1px solid #ffffff0d;max-height:120px;overflow:auto}.download-tasks>div{display:grid;grid-template-columns:1fr auto auto;gap:5px;align-items:center;padding:5px 10px;font-size:10px}.download-tasks span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.download-tasks small{color:#8290ac}.download-tasks button{border:0;background:#ffffff0a;color:inherit;border-radius:5px}.account-tools{display:flex;gap:7px;margin-top:12px}.settings-list>label:not(.setting-row){display:grid;grid-template-columns:1fr 160px;align-items:center;padding:9px 13px;background:#0b1120;border-radius:10px}.settings-list>label input,.settings-list>label select,.library-toolbar input,.library-toolbar select,.dola-row input{background:#080d19;border:1px solid #ffffff16;border-radius:8px;color:inherit;padding:7px}.adapter-switches{padding:12px;background:#0b1120;border-radius:11px;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.adapter-switches>strong{grid-column:1/-1}.adapter-switches label{display:flex;justify-content:space-between}.library-toolbar{gap:8px;align-items:center;justify-content:flex-start}.library-toolbar input{flex:1}.library-toolbar span{margin-left:auto}.pagination{display:flex;justify-content:center;align-items:center;gap:12px;padding:15px}.dola-batch>p{color: var(--ui-muted)}.dola-table{display:flex;flex-direction:column;gap:7px;margin:12px 0}.dola-row{display:grid;grid-template-columns:120px 1fr 1fr 180px 85px;gap:7px;align-items:center}.dola-row span{font-size:11px;color: var(--ui-muted)}.dola-batch>.primary{padding:9px 14px;border-radius:9px;cursor:pointer}
+.file-icon{overflow:hidden}.file-icon img,.file-icon video{width:100%;height:100%;object-fit:cover}.account-group{margin-bottom:5px}.account-group-header{width:100%;display:flex;justify-content:space-between;border:0;background:#ffffff06;color:#94a2be;border-radius:8px;padding:6px 9px;margin:3px 0 5px;cursor:pointer}.library-toolbar.filters{flex-wrap:wrap}.library-toolbar input[type="date"]{max-width:140px}
+.dola-row{grid-template-columns:120px 1fr 1fr 170px 170px}.dola-row-actions{display:flex;gap:5px}.dola-row-actions button{flex:1;font-size:10px;padding:6px 4px}
+.dola-task-box{margin:12px 0;padding:14px;background:#0b1120;border:1px solid #ffffff12;border-radius:12px}.dola-task-box textarea{width:100%;resize:vertical;min-height:90px;background:#080d19;border:1px solid #ffffff16;border-radius:9px;color:inherit;padding:10px;outline:none}.reference-picker{margin-top:10px;padding:10px 12px;border:1px dashed var(--ui-border-strong);border-radius:10px;background:#0a1020}.reference-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:22px}.reference-list span:not(.form-hint){max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 8px;border-radius:999px;background:#17233b;color:#b7cdfd;font-size:12px}.boss-key{padding:12px;background:#0b1120;border-radius:11px}.boss-key>.setting-row{padding:8px 0;background:transparent}.boss-key .form-grid{margin-top:8px;grid-template-columns:repeat(5,1fr)}
+.dola-create-box{margin:12px 0;padding:14px;background:#0b1120;border:1px solid #ffffff12;border-radius:12px}.dola-create-box textarea{width:100%;resize:vertical;min-height:82px;background:#080d19;border:1px solid #ffffff16;border-radius:9px;color:inherit;padding:10px;outline:none}.dola-create-box .primary{margin-top:12px;padding:8px 13px;border-radius:9px;cursor:pointer}.dola-create-box .form-grid{margin-top:10px}
+.dola-login-mode{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:14px;align-items:end;margin:12px 0;padding:14px;background:#0b1120;border:1px solid #ffffff12;border-radius:12px}.dola-login-mode .section-heading{margin:0}.dola-login-mode label{display:grid;gap:6px;color:var(--ui-muted);font-size:12px}.dola-login-mode select{background:#080d19;border:1px solid #ffffff16;border-radius:8px;color:inherit;padding:8px}
+.dola-batch-actions{margin-top:13px}.dola-batch-actions button{padding:8px 12px;border-radius:9px;cursor:pointer}
+.migration-conflict{display:inline-block;margin-left:8px;padding:2px 6px;border-radius:999px;background:#5b3417;color:#f7bd77;font-size:10px;font-style:normal}
+.media-batch{flex-wrap:wrap}.media-batch button{flex:1 1 calc(50% - 5px);min-width:0;font-size:10px}
+.diagnostics-panel{display:flex;flex-direction:column;gap:14px}.diagnostics-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.diagnostics-toolbar button{border:1px solid #ffffff1c;background:#ffffff0a;border-radius:8px;color:inherit;padding:7px 12px}.diagnostic-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.diagnostic-metrics>div{display:flex;flex-direction:column;gap:4px;padding:12px;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:10px}.diagnostic-metrics strong{font-size:21px;color:var(--ui-text)}.diagnostic-metrics span{font-size:11px;color:var(--ui-muted)}.diagnostic-runtime,.diagnostic-accounts{padding:13px;background:#0b1120;border-radius:12px}.diagnostic-account{padding:11px 0;border-top:1px solid var(--ui-border)}.diagnostic-account:first-of-type{border-top:0}.diagnostic-account-head{display:flex;justify-content:space-between;gap:8px}.diagnostic-account>small{display:block;color:#7f8ca8;font-size:11px;margin-top:4px}.diagnostic-url{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.diagnostic-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.diagnostic-tags span{padding:4px 7px;border-radius:999px;background:var(--ui-primary-soft);color:var(--ui-primary-hover);font-size:10px}.diagnostic-good{color:#0f7455;font-size:11px}.diagnostic-muted{color:#7f8ca8;font-size:11px}
+.section-heading{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.section-heading small,.form-hint{color:#7f8ca8;font-size:11px;line-height:1.55}.proxy-mode{grid-template-columns:1fr 1fr;margin-top:12px}.inline-status{display:block;padding:8px 10px;background:#080d19;border:1px solid #ffffff12;border-radius:8px;color:#b8c4df;font-size:12px}.subscription-editor{display:flex;flex-direction:column;gap:10px;margin-top:12px}.subscription-editor label{display:flex;flex-direction:column;gap:6px;color: var(--ui-muted);font-size:12px}.subscription-editor input{width:100%;background:#080d19;border:1px solid #ffffff16;border-radius:9px;color:#e2e9f8;padding:9px;outline:none}.node-picker{display:grid;grid-template-columns:1fr auto;gap:8px}.node-picker select{min-width:0;background:#080d19;border:1px solid #ffffff16;border-radius:9px;color:#e2e9f8;padding:9px}.node-picker button{border:1px solid #ffffff1c;background:#ffffff0a;border-radius:9px;color:inherit;padding:8px 12px}.form-warning{margin:8px 0;padding:8px 10px;border-radius:8px;background:#4a241f;color:#ffc2b8;font-size:11px;line-height:1.5}.fingerprint-box{margin-top:16px;background:#0b1120;border-radius:12px;padding:13px}.fingerprint-grid{margin-top:12px}.fingerprint-grid label{min-width:0}.fingerprint-actions{display:flex;align-items:center;gap:8px;margin-top:12px}.fingerprint-actions button{border:1px solid #ffffff1c;background:#ffffff0a;border-radius:8px;color:inherit;padding:7px 10px}.migration-panel>p:first-child{margin-top:0;line-height:1.6;color:var(--ui-muted)}.migration-preview,.migration-report{margin-top:15px;padding:12px;background:#0b1120;border-radius:11px}.metric-row{display:grid;grid-template-columns:100px 1fr;gap:8px;padding:5px 0;border-bottom:1px solid var(--ui-border)}.metric-row span{color: var(--ui-muted)}.metric-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.migration-accounts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}.migration-accounts>div{display:flex;flex-direction:column;gap:3px;padding:8px;background:#ffffff06;border-radius:8px;min-width:0}.migration-accounts span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.migration-accounts small{color: var(--ui-muted)}.migration-report{display:flex;flex-direction:column;gap:7px}.migration-report span{color:var(--ui-muted);font-size:12px;word-break:break-all}
+.group-toolbar{flex-wrap:wrap}.group-toolbar select{flex:1 1 120px}.group-toolbar button.danger{border-color:#9b4a583d;color:#ff9ba8}
+.dola-calibration-box{margin:12px 0;padding:14px;background:#0b1120;border:1px solid #ffffff12;border-radius:12px}.dola-calibration-controls{display:grid;grid-template-columns:180px minmax(180px,1fr) repeat(5,minmax(90px,auto));gap:7px;align-items:center}.dola-calibration-controls label{display:grid;gap:5px;color:var(--ui-muted);font-size:12px}.dola-calibration-controls select,.dola-calibration-controls button{background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:8px;color:var(--ui-text);padding:8px}.dola-calibration-controls button{cursor:pointer}.dola-point-status{color:#b6c2db;font-size:11px;white-space:nowrap}.dola-calibration-box>.form-hint{margin:9px 0 0}
+.account-quick-actions{flex-wrap:wrap}.account-quick-actions button{flex:1 1 calc(50% - 4px);min-width:0}
+/* Keep the narrow account rail usable when all batch actions are visible. */
+.account-quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.account-quick-actions button{min-width:0}
+.batch-toolbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.batch-toolbar button{min-width:0;min-height:30px;padding-inline:4px;white-space:nowrap}
+.theme-toggle{min-width:36px;padding-inline:8px!important;font-size:16px}
+.tool-box{margin-top:12px;padding:13px;background:#0b1120;border:1px solid #ffffff12;border-radius:12px}
+.directory-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #ffffff0d}
+.directory-setting:first-of-type{border-top:0}
+.directory-setting>div:first-child{display:flex;flex-direction:column;gap:4px;min-width:0}
+.directory-setting strong{font-size:12px}
+.directory-setting small{color:#7f8ca8;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:440px}
+.directory-setting .account-tools{margin-top:0;flex:0 0 auto}
+/* Keep the dense action bar usable at the 1080px minimum window width. */
+.topbar{min-width:0}.brand{flex:0 0 auto;min-width:190px}.top-actions{min-width:0;flex:1;justify-content:flex-start;overflow:hidden;gap:7px;padding:4px 0}.top-actions button{flex:0 0 auto;white-space:nowrap}.toolbar-cluster{display:flex;align-items:center;gap:7px;flex:0 0 auto}.toolbar-utilities{min-width:0;flex:1;overflow-x:auto;scrollbar-width:thin;scrollbar-color:#5f6b8b transparent;padding:4px 0 4px 8px;border-left:1px solid #ffffff12}
+
+/* On normal desktop widths, show every utility without forcing the header into a horizontal-scrolling strip. */
+@media(min-width:1181px){.topbar{height:auto;min-height:68px;padding-top:8px;padding-bottom:8px;align-items:flex-start}.top-actions{align-items:center;align-content:center;flex-wrap:wrap;overflow:visible}.toolbar-utilities{overflow:visible;flex-wrap:wrap;align-content:center}}
+
+/* Light theme tokens and surfaces. The theme flag is applied to <html>, so this selector must target :root itself. */
+:root[data-theme="light"]{color:#182039;background:#e9eef8}
+:root[data-theme="light"] body{background:#e9eef8}
+:root[data-theme="light"] .app-shell{background:radial-gradient(circle at 45% -20%,#dce7ff 0,transparent 42%),#e9eef8;color:#1c2741}
+:root[data-theme="light"] .topbar,:root[data-theme="light"] .sidebar,:root[data-theme="light"] .tabs{background:#f8faff;color:#1c2741;border-color:#d9e1ef}
+:root[data-theme="light"] .accounts-panel,:root[data-theme="light"] .media-panel{border-color:#d9e1ef}
+:root[data-theme="light"] .browser-panel,:root[data-theme="light"] .view-slot{background:#edf1f8}
+:root[data-theme="light"] .tab{color:#6e7a94;border-color:#e3e8f2}
+:root[data-theme="light"] .search,:root[data-theme="light"] .form-grid input,:root[data-theme="light"] .form-grid select,:root[data-theme="light"] .proxy-box input,:root[data-theme="light"] .proxy-box select,:root[data-theme="light"] .group-toolbar select,:root[data-theme="light"] .settings-list>label input,:root[data-theme="light"] .settings-list>label select,:root[data-theme="light"] .library-toolbar input,:root[data-theme="light"] .library-toolbar select,:root[data-theme="light"] .dola-row input,:root[data-theme="light"] .dola-login-mode select,:root[data-theme="light"] .node-picker select,:root[data-theme="light"] .subscription-editor input{background:#fff;color:#182039;border-color:#ccd7e8}
+:root[data-theme="light"] .setting-row,:root[data-theme="light"] .proxy-box,:root[data-theme="light"] .tool-box,:root[data-theme="light"] .adapter-switches,:root[data-theme="light"] .boss-key,:root[data-theme="light"] .diagnostic-runtime,:root[data-theme="light"] .diagnostic-accounts,:root[data-theme="light"] .migration-preview,:root[data-theme="light"] .migration-report,:root[data-theme="light"] .dola-task-box,:root[data-theme="light"] .dola-create-box,:root[data-theme="light"] .dola-calibration-box,:root[data-theme="light"] .dola-login-mode,:root[data-theme="light"] .fingerprint-box{background:#fff;border-color:#d9e1ef}
+:root[data-theme="light"] .segmented{background:#e8edf6;border-color:#d4deec}
+:root[data-theme="light"] .segmented button.active{background:#fff;color:#182039;box-shadow:0 1px 4px #64748b22}
+:root[data-theme="light"] .modal{background:#f8faff;color:#182039;border-color:#d4deec}
+:root[data-theme="light"] .modal-backdrop{background:#17233b66}
+:root[data-theme="light"] .media-card{background:#fff;border-color:#d9e1ef}
+:root[data-theme="light"] .media-preview{background:#eef2f8}
+:root[data-theme="light"] .empty-browser{background:radial-gradient(circle at center,#dce7ff,transparent 58%)}
+:root[data-theme="light"] .statusbar{background:#f8faff;color:#6e7a94;border-color:#d9e1ef}
+:root[data-theme="light"] .panel-footer,:root[data-theme="light"] .eyebrow,:root[data-theme="light"] .account-main small,:root[data-theme="light"] .media-info small,:root[data-theme="light"] .file-row small,:root[data-theme="light"] .form-grid label,:root[data-theme="light"] .subscription-editor label,:root[data-theme="light"] .dola-login-mode label{color:var(--ui-text-secondary)}
+:root[data-theme="light"] .empty-list{color: var(--ui-muted)}
+:root[data-theme="light"] .empty-list strong{color:#34415d}
+:root[data-theme="light"] .file-row{border-color:#e1e7f0}
+:root[data-theme="light"] .file-icon{background:#dbe5f5}
+:root[data-theme="light"] .file-icon.video{background:#eadcf5}
+:root[data-theme="light"] .file-icon.image{background:#d4eeee}
+:root[data-theme="light"] .inline-status{background:#fff;border-color:#ccd7e8;color:#40516f}
+:root[data-theme="light"] .reference-picker,:root[data-theme="light"] .reference-list span:not(.form-hint),:root[data-theme="light"] .diagnostic-tags{background:#eef3fb;color:#425578}
+:root[data-theme="light"] .dola-point-status,:root[data-theme="light"] .section-heading small,:root[data-theme="light"] .form-hint,:root[data-theme="light"] .diagnostic-muted,:root[data-theme="light"] .diagnostic-account>small{color: var(--ui-muted)}
+:root[data-theme="light"] .top-actions button,:root[data-theme="light"] .account-actions button,:root[data-theme="light"] .media-footer button,:root[data-theme="light"] .settings-list>button,:root[data-theme="light"] .library-toolbar button,:root[data-theme="light"] .group-toolbar button,:root[data-theme="light"] .batch-toolbar button,:root[data-theme="light"] .media-batch button,:root[data-theme="light"] .account-tools button,:root[data-theme="light"] .pagination button,:root[data-theme="light"] .dola-row button,:root[data-theme="light"] .diagnostics-toolbar button,:root[data-theme="light"] .fingerprint-actions button{background:#fff;color:#263653;border-color:#ccd7e8}
+:root[data-theme="light"] .top-actions button:hover,:root[data-theme="light"] .top-actions button.active{background:#eef0ff;border-color:#9c8cff}
+:root[data-theme="light"] .view-slot.secondary select{background:#fff;color:#182039;border-color:#ccd7e8}
+:root[data-theme="light"] .startup-error{background:#e9eef8;color:#182039}
+:root[data-theme="light"] .startup-error section{background:#f8faff;border-color:#ccd7e8;box-shadow:0 24px 60px #64748b33}
+.connection-state{white-space:nowrap}.connection-state.busy{color:#f3c66b}.connection-state.error{color:#ff8e9e}.connection-state.idle{color: var(--ui-muted)}
+.media-card-actions button{margin-top:0!important;font-size:10px;padding:5px 7px}.candidate-summary{display:flex;flex-direction:column;gap:12px}.candidate-summary>.form-hint{margin:0}.candidate-list{display:flex;flex-direction:column;gap:8px}.candidate-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 13px;background:#0b1120;border:1px solid #ffffff0d;border-radius:11px}.candidate-row.selected{border-color:#765cff88;background:linear-gradient(90deg,#765cff1c,#ffffff06)}.candidate-copy{display:flex;flex-direction:column;gap:5px;min-width:0}.candidate-copy strong{font-size:12px;color:#dce6ff}.candidate-copy small{max-width:600px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8795b1;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px}.candidate-actions{display:flex;flex-shrink:0;gap:6px}.candidate-actions button{border:1px solid #ffffff1c;background:#ffffff0a;border-radius:8px;color:inherit;padding:7px 10px;cursor:pointer;white-space:nowrap}.candidate-actions button:hover{background:#765cff2b;border-color:#8c7cff}.candidate-actions button:first-child{background:#765cff;color:#fff;border-color:#765cff}
+.rejected-candidates{display:flex;flex-direction:column;gap:5px;padding:10px 12px;background:#fff5f5;border:1px solid #e7b8bf;border-radius:10px}.rejected-candidates strong{color:#b74a5d;font-size:12px}.rejected-candidates small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9a5964;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px}
+:root[data-theme="light"] .candidate-row{background:#fff;border-color:#d9e1ef}:root[data-theme="light"] .candidate-row.selected{background:#eef0ff;border-color:#9c8cff}:root[data-theme="light"] .candidate-copy strong{color:#263653}:root[data-theme="light"] .candidate-copy small{color:#667692}:root[data-theme="light"] .candidate-actions button{background:#fff;color:#263653;border-color:#ccd7e8}
+.account-card.has-video-notice{border-color:#f0b45b66;background:linear-gradient(90deg,#f0b45b18,#ffffff04)}.account-video-notice{display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;background:#f0b45b;color:#2c1b08;font-size:9px;font-style:normal;font-weight:700;vertical-align:1px}.tab.has-video-notice:not(.active){color:#f3c66b}.tab-label{display:flex;align-items:center;gap:5px;min-width:0}.tab-video-dot{color:#f0b45b;font-size:10px;font-style:normal;text-shadow:0 0 7px #f0b45b}
+:root[data-theme="light"] .account-card.has-video-notice{border-color:#d4932c88;background:#fff7e6}:root[data-theme="light"] .account-video-notice{color:#2c1b08;background:#f0b45b}:root[data-theme="light"] .tab.has-video-notice:not(.active){color:#a45f0a}
+ .dola-task-account{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,280px) auto;gap:10px;align-items:center;margin-bottom:12px;padding:10px 12px;background:#101a2e;border:1px solid #ffffff12;border-radius:10px}.dola-task-account .section-heading{margin:0}.dola-task-account select{width:100%;background:#080d19;border:1px solid #ffffff16;border-radius:8px;color:inherit;padding:8px}.dola-task-account-count{color:var(--ui-muted);font-size:11px;white-space:nowrap}
+
+/* ==============================================================================
+   Layout - sizing, overflow and scroll roots
+   ============================================================================== */
+
+html, body, #root {
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace {
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.workspace.resources-collapsed {
+  grid-template-columns: 264px minmax(480px, 1fr);
+}
+
+.workspace.resources-collapsed .media-panel {
+  display: none;
+}
+
+.sidebar,
+.accounts-panel,
+.media-panel,
+.account-list,
+.media-list,
+.browser-panel,
+.view-grid,
+.view-slot {
+  min-height: 0;
+}
+
+.account-list,
+.media-list {
+  overscroll-behavior: contain;
+}
+
+.account-tools-toggle {
+  display: flex;
+  width: calc(100% - 28px);
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 14px 8px;
+  padding: 7px 9px;
+  border: 1px solid #ffffff12;
+  border-radius: 8px;
+  color: #aab6d2;
+  background: #ffffff06;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.account-tools-toggle:hover {
+  border-color: #806dff66;
+  background: #745cff16;
+}
+
+.account-tools-panel {
+  display: contents;
+}
+
+html[data-theme="light"] {
+  color: #182039;
+  background: #e9eef8;
+}
+
+html[data-theme="light"] .app-shell {
+  background: #e9eef8;
+  color: #1c2741;
+}
+
+html[data-theme="light"] .topbar,
+html[data-theme="light"] .sidebar,
+html[data-theme="light"] .tabs {
+  background: #f8faff;
+  color: #1c2741;
+}
+
+html[data-theme="light"] .browser-panel,
+html[data-theme="light"] .view-slot {
+  background: #edf1f8;
+}
+
+.media-preview {
+  position: relative;
+  cursor: zoom-in;
+}
+
+.media-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-preview .preview-hint {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: #080d19b8;
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+
+.media-preview:hover .preview-hint {
+  opacity: 1;
+}
+
+.resource-preview-view {
+  min-height: 360px;
+  max-height: 62vh;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border: 1px solid #ffffff12;
+  border-radius: 12px;
+  background: #070a12;
+}
+
+.resource-preview-view img,
+.resource-preview-view video {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preview-actions button,
+.tool-box button {
+  border: 1px solid #ffffff18;
+  border-radius: 8px;
+  padding: 7px 11px;
+  color: inherit;
+  background: #ffffff09;
+  cursor: pointer;
+}
+
+.preview-actions button:hover,
+.tool-box button:hover {
+  border-color: #806dff88;
+  background: #745cff1c;
+}
+
+.tool-box {
+  padding: 13px;
+  border: 1px solid #ffffff10;
+  border-radius: 11px;
+  background: #0b1120;
+}
+
+.tool-box label.wide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.tool-box label input {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #ffffff16;
+  border-radius: 9px;
+  outline: none;
+  color: #e2e9f8;
+  background: #080d19;
+}
+
+.tool-box .account-tools {
+  align-items: center;
+}
+
+.inline-status.success {
+  color: #4bd6a4;
+}
+
+.inline-status.error {
+  color: #ff8b98;
+}
+
+.face-grid-panel > p {
+  color: var(--ui-muted);
+  line-height: 1.6;
+}
+
+.face-grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 13px 0;
+}
+
+.face-grid-toolbar button,
+.face-grid-panel .account-tools button {
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: inherit;
+  background: #ffffff09;
+  cursor: pointer;
+}
+
+.face-grid-toolbar span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.face-grid-preview {
+  min-height: 180px;
+  max-height: 330px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #ffffff12;
+  border-radius: 12px;
+  background: #070a12;
+}
+
+.face-grid-preview img {
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.face-grid-options {
+  margin-bottom: 13px;
+}
+
+.face-grid-panel .account-tools {
+  align-items: center;
+}
+
+.plugin-manager {
+  padding: 13px;
+  border: 1px solid #ffffff10;
+  border-radius: 11px;
+  background: #0b1120;
+}
+
+.plugin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.plugin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid #ffffff0d;
+  border-radius: 9px;
+  background: #ffffff06;
+}
+
+.plugin-row > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.plugin-row small {
+  margin-top: 3px;
+  color: #7683a1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-row button {
+  border: 1px solid #ffffff14;
+  border-radius: 7px;
+  padding: 6px 8px;
+  color: inherit;
+  background: #ffffff08;
+  cursor: pointer;
+}
+
+.update-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px;
+  border-radius: 11px;
+  background: #0b1120;
+}
+
+.update-box > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.update-box small {
+  color: #7683a1;
+}
+
+.browser-settings-box {
+  margin-top: 16px;
+  padding: 13px;
+  border-radius: 12px;
+  background: #0b1120;
+}
+
+.browser-settings-box label.wide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.browser-settings-box input {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #ffffff16;
+  border-radius: 9px;
+  outline: none;
+  color: #e2e9f8;
+  background: #080d19;
+}
+
+.browser-settings-box .account-tools {
+  align-items: center;
+}
+
+.browser-settings-box .account-tools .switch-row {
+  margin-right: auto;
+}
+
+.dola-row-actions {
+  flex-wrap: wrap;
+  align-content: center;
+}
+
+.dola-row-actions button {
+  min-width: 52px;
+}
+
+.topbar {
+  min-height: 68px;
+  height: auto;
+  gap: 12px;
+}
+
+.top-actions {
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.toolbar-cluster {
+  min-width: 0;
+  align-items: center;
+}
+
+.toolbar-more {
+  position: relative;
+}
+
+.toolbar-more > button {
+  white-space: nowrap;
+}
+
+.toolbar-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 10020;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(132px, 1fr));
+  gap: 5px;
+  width: 330px;
+  padding: 8px;
+  border: 1px solid #ffffff1c;
+  border-radius: 12px;
+  background: #11182af7;
+  box-shadow: 0 18px 48px #0009;
+  backdrop-filter: blur(14px);
+}
+
+.toolbar-menu button {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid #ffffff10;
+  border-radius: 8px;
+  color: #dce6ff;
+  background: #ffffff08;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.toolbar-menu button:hover {
+  border-color: #806dff88;
+  background: #745cff24;
+}
+
+html[data-theme="light"] .toolbar-menu {
+  border-color: #d5deed;
+  background: #f8fafffa;
+  box-shadow: 0 18px 48px #6b789933;
+}
+
+html[data-theme="light"] .toolbar-menu button {
+  border-color: #dbe3f1;
+  color: #1c2741;
+  background: #fff;
+}
+
+@media (max-width: 1280px) {
+  .topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .top-actions {
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+}
+
+
+
+.video-notice-layer {
+  position: fixed;
+  top: 78px;
+  right: 18px;
+  z-index: 10000;
+  display: flex;
+  width: min(360px, calc(100vw - 36px));
+  flex-direction: column;
+  gap: 9px;
+  pointer-events: none;
+}
+
+.video-notice-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 11px;
+  border: 1px solid #806dff66;
+  border-radius: 12px;
+  color: #eaf0ff;
+  background: #121a2cf2;
+  box-shadow: 0 16px 42px #0008;
+  pointer-events: auto;
+  animation: video-notice-in .18s ease-out;
+}
+
+.video-notice-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(135deg, #725cff, #3ea7ff);
+  font-size: 12px;
+}
+
+.video-notice-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.video-notice-content strong {
+  font-size: 12px;
+}
+
+.video-notice-content span {
+  overflow: hidden;
+  color: #a4b0cb;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-notice-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.video-notice-actions button {
+  border: 1px solid #ffffff1c;
+  border-radius: 7px;
+  padding: 5px 7px;
+  color: inherit;
+  background: #ffffff0a;
+  cursor: pointer;
+}
+
+.video-notice-actions button:hover {
+  border-color: #806dff88;
+  background: #745cff2a;
+}
+
+@keyframes video-notice-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.addressbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #ffffff10;
+  background: #0a0f1c;
+}
+
+.addressbar .address-lock {
+  width: 24px;
+  color: #58d5ad;
+  font-size: 16px;
+  text-align: center;
+}
+
+.addressbar input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ffffff16;
+  border-radius: 8px;
+  outline: none;
+  color: inherit;
+  background: #080d19;
+}
+
+.addressbar button {
+  padding: 8px 13px;
+  border: 1px solid #ffffff16;
+  border-radius: 8px;
+  color: #dce6ff;
+  background: #ffffff0a;
+  cursor: pointer;
+}
+
+.addressbar button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.media-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.media-card-actions button {
+  margin-top: 0;
+}
+
+.media-card-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+html[data-theme="light"] .addressbar {
+  border-color: #dbe3f1;
+  background: #f8faff;
+}
+
+html[data-theme="light"] .addressbar input,
+html[data-theme="light"] .addressbar button {
+  border-color: #d5deed;
+  color: #1c2741;
+  background: #fff;
+}
+
+/* Keep dense batch-login controls inside the modal at desktop and narrow widths. */
+.modal,
+.modal-body,
+.dola-batch,
+.dola-create-box,
+.dola-login-mode,
+.dola-calibration-box,
+.dola-task-box,
+.dola-table,
+.dola-row,
+.dola-row > *,
+.dola-calibration-controls,
+.dola-calibration-controls > * {
+  min-width: 0;
+}
+
+.dola-batch {
+  overflow-x: hidden;
+}
+
+.dola-calibration-controls {
+  grid-template-columns: minmax(140px, 1.2fr) minmax(0, 1.4fr) repeat(5, minmax(0, 1fr));
+}
+
+.dola-calibration-controls button {
+  min-width: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.dola-point-status {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.dola-row-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.dola-row-actions button {
+  min-width: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+
+
+
+
+/* Interaction polish: predictable focus, state feedback and compact layouts. */
+button,
+input,
+select {
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, opacity .16s ease, transform .16s ease;
+}
+
+/* Single source for the keyboard focus ring. This used to be two different blues - #a89aff
+   here for [role="button"] and --ui-primary in a later duplicate for button/input/select - so
+   the ring colour changed depending on which kind of control you tabbed to. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .52;
+}
+
+.search-box {
+  position: relative;
+  margin: 0 14px 10px;
+}
+
+.search-box .search {
+  width: 100%;
+  margin: 0;
+  padding-right: 78px;
+}
+
+.search-box kbd,
+.help-shortcut kbd {
+  display: inline-flex;
+  min-width: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border: 1px solid #ffffff1c;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: #aeb9d4;
+  background: #ffffff0a;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.search-box kbd {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.account-card {
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+
+.account-card.open:not(.selected) {
+  border-color: #4bd6a433;
+}
+
+.account-card.open .platform-dot {
+  position: relative;
+  box-shadow: 0 0 0 2px #4bd6a422;
+}
+
+.account-card.open .platform-dot::after {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #0b1121;
+  border-radius: 50%;
+  background: #4bd6a4;
+  content: '';
+}
+
+.account-empty {
+  display: flex;
+  min-height: 210px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px;
+  color: #7482a0;
+  text-align: center;
+}
+
+.account-empty > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  color: #9c8cff;
+  background: #765cff14;
+  font-size: 23px;
+}
+
+.account-empty strong {
+  margin-top: 12px;
+  color: #c4cee4;
+  font-size: 13px;
+}
+
+.account-empty p {
+  max-width: 210px;
+  margin: 7px 0 12px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.account-empty button {
+  border: 1px solid #ffffff18;
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: inherit;
+  background: #ffffff09;
+  cursor: pointer;
+}
+
+.connection-state {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.connection-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #8794af;
+}
+
+.connection-dot.ready {
+  background: #4bd6a4;
+  box-shadow: 0 0 9px #4bd6a4aa;
+}
+
+.connection-dot.busy {
+  background: #f3c66b;
+  box-shadow: 0 0 9px #f3c66baa;
+}
+
+.connection-dot.error {
+  background: #ff8e9e;
+  box-shadow: 0 0 9px #ff8e9e99;
+}
+
+.connection-dot.idle {
+  background: #8794af;
+}
+
+/* Inset ring, deliberately unlike the other focus-visible rules: .media-card is
+   overflow:hidden, so an outer ring on the preview would be clipped away at the card edges. */
+.media-preview:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: -2px;
+}
+
+.task-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 5px;
+  border-top: 1px solid #ffffff0d;
+  color: #aeb9d4;
+  font-size: 11px;
+}
+
+.task-queue-header small {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.modal-backdrop {
+  overflow: auto;
+  padding: 16px;
+}
+
+.modal > header,
+.modal > footer {
+  flex-shrink: 0;
+}
+
+.modal > header button {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: #aab6d2;
+}
+
+.modal > header button:hover {
+  color: #fff;
+  background: #ffffff12;
+}
+
+.help-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.help-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #806dff3d;
+  border-radius: 14px;
+  background: radial-gradient(circle at 100% 0, #765cff2b, transparent 45%), #0b1120;
+}
+
+.help-hero-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 15px;
+  color: #fff;
+  background: linear-gradient(135deg, #725cff, #3ea7ff);
+  box-shadow: 0 10px 24px #5f55cc44;
+  font-size: 25px;
+}
+
+.help-hero h3 {
+  margin: 4px 0 5px;
+  color: #edf2ff;
+  font-size: 17px;
+}
+
+.help-hero p {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.help-card {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #ffffff0e;
+  border-radius: 11px;
+  background: #0b1120;
+}
+
+.help-step {
+  color: var(--ui-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.help-card strong {
+  color: #dce6ff;
+  font-size: 12px;
+}
+
+.help-card p,
+.help-points p {
+  margin: 5px 0 0;
+  color: #8491ae;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.help-section {
+  padding: 13px;
+  border: 1px solid #ffffff0e;
+  border-radius: 11px;
+  background: #0b1120;
+}
+
+.help-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.help-shortcut {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid #ffffff0d;
+  border-radius: 8px;
+  color: #aeb9d4;
+  font-size: 11px;
+}
+
+.help-shortcut > span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.help-shortcut b {
+  color: var(--ui-muted);
+  font-style: normal;
+  font-weight: 400;
+}
+
+.help-shortcut small {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.help-points {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.help-points > div {
+  min-width: 0;
+}
+
+.help-badge {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.help-badge.good {
+  color: #146b52;
+  background: #dcf2e7;
+}
+
+.help-badge.info {
+  color: #2b5cb8;
+  background: #e3edff;
+}
+
+.help-badge.neutral {
+  color: #4e5a68;
+  background: #edf0f4;
+}
+
+html[data-theme="light"] .search-box kbd,
+html[data-theme="light"] .help-shortcut kbd {
+  border-color: #ccd7e8;
+  color: #526381;
+  background: #eef3fb;
+}
+
+html[data-theme="light"] .account-card.open:not(.selected) {
+  border-color: #28a97866;
+}
+
+html[data-theme="light"] .account-card.open .platform-dot::after {
+  border-color: #f8faff;
+}
+
+html[data-theme="light"] .account-empty strong,
+html[data-theme="light"] .help-hero h3,
+html[data-theme="light"] .help-card strong {
+  color: #263653;
+}
+
+html[data-theme="light"] .account-empty,
+html[data-theme="light"] .help-card p,
+html[data-theme="light"] .help-points p,
+html[data-theme="light"] .help-hero p {
+  color: var(--ui-text-secondary);
+}
+
+html[data-theme="light"] .account-empty button {
+  border-color: #ccd7e8;
+  color: #263653;
+  background: #fff;
+}
+
+html[data-theme="light"] .help-hero,
+html[data-theme="light"] .help-card,
+html[data-theme="light"] .help-section {
+  border-color: #d9e1ef;
+  background: #fff;
+}
+
+html[data-theme="light"] .help-hero {
+  background: radial-gradient(circle at 100% 0, #dce7ff, transparent 48%), #fff;
+}
+
+html[data-theme="light"] .help-shortcut {
+  border-color: #e1e7f0;
+  color: #526381;
+}
+
+
+
+@media (min-width: 801px) and (max-width: 1280px) {
+  .top-actions {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 3px;
+    scrollbar-width: thin;
+    scrollbar-color: #5f6b8b transparent;
+  }
+
+  .toolbar-primary,
+  .toolbar-utilities {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+  }
+
+  .toolbar-utilities {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+}
+
+
+
+@media (max-width: 1280px) {
+  .video-notice-layer {
+    top: auto;
+    bottom: 36px;
+  }
+}
+
+/* ==============================================================================
+   Workspace - surfaces, panels and progressive disclosure
+   ============================================================================== */
+
+/* Workspace surfaces and progressive disclosure. */
+.app-shell { background: var(--ui-surface); }
+.topbar { height: 76px; min-height: 76px; flex-shrink: 0; padding: 0 24px; align-items: center; gap: 32px; background: var(--ui-surface); }
+.brand { min-width: 220px; }
+.brand-mark { background: #7464db; box-shadow: none; border-radius: 12px; }
+.brand strong { font-size: 15px; letter-spacing: .02em; }
+.brand span { margin-top: 5px; color: var(--ui-muted); }
+.top-actions { flex-wrap: nowrap; overflow: visible; gap: 18px; }
+.toolbar-primary { gap: 4px; }
+.toolbar-utilities { flex: 0 0 auto; flex-wrap: nowrap; overflow: visible; gap: 6px; padding-left: 18px; }
+.top-actions button { font-size: 12px; padding: 9px 11px; border-color: transparent; background: transparent; }
+.toolbar-menu { max-height: calc(100vh - 100px); overflow-y: auto; padding: 12px; gap: 8px; }
+.workspace { grid-template-columns: 264px minmax(360px, 1fr) 292px; }
+.workspace.resources-collapsed { grid-template-columns: 264px minmax(360px, 1fr); }
+.sidebar { background: var(--ui-surface); }
+.panel-title { height: 88px; flex-shrink: 0; padding: 22px 20px; }
+.panel-title h2 { font-size: 17px; font-weight: 600; margin-top: 6px; }
+.eyebrow { font-size: 9px; letter-spacing: .16em; color: var(--ui-muted); }
+/* Form controls had no type of their own. `button,input,select{font:inherit}` in the base layer at
+   the top of this file hands them the 16px body size, and of the 39 rules in the whole stylesheet
+   that target a control, exactly zero set a font-size to override it - so every field in every
+   dialog rendered at 16px next to 11-12px labels. The boxes were designed (`.settings-list` gives
+   its inputs and selects min-height:34px); only the type inside them was never carried over from
+   the base layer. Measured in the settings dialog: a select at 16px/37.4px beside an 11px nav tab,
+   and the text input in the same row equally at 16px.
+
+   12px is this app's field size - it is what `.search` was deliberately set to - so the
+   fall-through now lands on the intended value instead of the body default. Specificity is kept at
+   the lowest possible (0,0,1) via `:where()` so every scoped rule still wins: the filter selects in
+   .account-tools-panel are scoped (0,1,1) and keep their compact 11px. Checkboxes and radios are
+   excluded because they carry no text and their UA-drawn boxes should not be resized by a type
+   change - the same reason `.settings-list` above writes `input:not([type="checkbox"])`. */
+input:where(:not([type="checkbox"], [type="radio"])), select, textarea { font-size: 12px; }
+.accounts-panel > .search-box { margin: 0 16px 14px; }
+.search-box .search { font-size: 12px; padding: 11px; }
+.account-tools-toggle { width: calc(100% - 32px); margin: 0 16px 16px; padding: 10px 12px; background: transparent; border-color: var(--ui-border); font-size: 12px; color: var(--ui-muted); }
+.account-tools-panel { display: block; overflow-y: auto; flex: 0 1 auto; max-height: 42vh; margin-bottom: 12px; border-bottom: 1px solid var(--ui-border); }
+.account-tools-panel .group-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.account-tools-panel .account-actions, .account-tools-panel .batch-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+/* The two filter selects have to be named explicitly. This panel's compact control type is
+   established here, but the rule only matched `button` - and a <select> is not a button, so the
+   dropdowns fell through to the 16px body size inherited from .account-tools-panel while the
+   buttons beside them rendered at 11px. Measured before the fix: select 16px/35.4px tall against
+   button 11px/31px - a 45% type jump inside one row. With them in the selector they land on the
+   same 11px and the min-height floor takes both to 31px. Any future control added to this panel
+   needs adding here too; the panel has no font-size of its own to inherit by accident. */
+.account-tools-panel button, .account-tools-panel select { min-height: 32px; font-size: 11px; }
+.account-list, .media-list, .account-tools-panel, .tab-scroll, .toolbar-menu { scrollbar-width: thin; scrollbar-color: #65718a55 transparent; }
+.account-group-header { padding: 10px; background: transparent; font-size: 11px; }
+.account-card { position: relative; min-height: 62px; border-radius: 10px; margin-bottom: 6px; }
+.account-main { padding: 12px 8px; }
+.account-main strong { font-size: 12px; font-weight: 600; }
+.platform-dot { flex-shrink: 0; width: 30px; height: 30px; border-radius: 9px; }
+.card-menu { display: none; position: absolute; right: 4px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 8px; }
+.account-card:hover .card-menu, .account-card:focus-within .card-menu { display: flex; }
+.card-menu button { min-width: 28px; min-height: 30px; }
+.panel-footer { display: flex; justify-content: space-between; padding: 16px; }
+.tabs { height: 46px; flex-shrink: 0; background: #fff; border-bottom: 1px solid var(--ui-border); }
+.tab-scroll { min-width: 0; align-items: flex-end; padding: 0 8px; }
+.tab { min-width: 142px; max-width: 220px; height: 38px; margin: 8px 4px 0 0; padding: 0 11px; border: 1px solid #d7dce5; border-bottom: 0; border-radius: 10px 10px 0 0; background: #fff; color: #697386; font-size: 12px; }
+.tab.active { background: #eef4ff; border-color: #9db9ef; color: #245dcc; box-shadow: inset 0 2px #2f6bed; }
+.capture-setting { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 16px 18px; padding: 13px; border: 1px solid var(--ui-border); border-radius: 12px; }
+.capture-setting strong { display: block; font-size: 12px; font-weight: 500; }
+.capture-setting small { display: block; margin-top: 5px; color: var(--ui-muted); font-size: 11px; }
+.capture-switch { flex-shrink: 0; width: 36px; height: 22px; border: 0; border-radius: 20px; padding: 3px; background: #667085; cursor: pointer; }
+.capture-switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: white; transition: transform .15s; }
+.capture-switch[aria-checked="true"] span { transform: translateX(14px); }
+.media-batch { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 0 16px 16px; }
+.media-batch button { font-size: 11px; min-height: 31px; }
+.media-footer { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 12px 16px; }
+.media-footer button { min-height: 32px; font-size: 11px; }
+.media-list { padding: 0 16px; }
+.media-card { margin-bottom: 14px; border-radius: 12px; }
+.media-card.video .media-card-actions { position: relative; z-index: 4; top: auto; left: auto; width: auto; transform: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0 0; padding: 8px; border: 1px solid #e1e5ec; border-radius: 14px; background: #fff; box-shadow: 0 8px 22px rgb(20 28 42 / 12%); }
+.media-card.video .media-card-actions button { min-width: 0; min-height: 30px; padding: 6px 7px; border: 1px solid #d7dce5; border-radius: 999px; font-size: 10px; color: #465167; background: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.media-card.video .media-card-actions .media-download-main { grid-column: 1 / -1; color: #fff !important; background: #2f6bed; font-weight: 700; }
+.media-card.video .media-card-actions .media-preview-action, .media-card.video .media-card-actions .media-channel { grid-column: 1 / -1; }
+.media-card.video .media-card-actions .media-preview-action { background: #fff; color: #394355; }
+/* The channel buttons carried three competing palettes across the generations of this
+   stylesheet; the two that carried !important are gone from the dash section below, and
+   this one - the original saturated blue/purple/teal - is gone with them. Three buttons
+   that run the identical download have no identity to colour-code, and at 1.26-2.23:1
+   their labels were unreadable anyway. They inherit the shared secondary treatment. */
+.media-card.video .media-info { padding-top: 16px; }
+.empty-browser h1 { font-size: clamp(22px, 2.2vw, 32px); font-weight: 600; letter-spacing: -.03em; }
+.empty-browser p { font-size: 13px; line-height: 1.9; }
+@media (max-width: 1180px) {
+  .topbar { gap: 12px; padding: 0 16px; }
+  .brand { min-width: 196px; }
+  .top-actions { gap: 8px; }
+  .top-actions button { padding: 8px; font-size: 11px; }
+  .toolbar-utilities { padding-left: 8px; }
+  .workspace { grid-template-columns: 240px minmax(320px, 1fr) 270px; }
+  .workspace.resources-collapsed { grid-template-columns: 240px minmax(320px, 1fr); }
+}
+
+/* Neutral workspace, including native controls and startup surfaces. */
+:root { color-scheme: light; background: #f3f5f8; color: #2f3747; }
+:root[data-theme="light"] body, :root[data-theme="light"] .app-shell { background: #f3f4f7; color: #303746; }
+:root[data-theme="light"] :is(.topbar,.sidebar,.tabs,.modal,.statusbar) { background: #fff; border-color: var(--ui-border); color: #303746; }
+:root[data-theme="light"] :is(.browser-panel,.view-slot,.empty-browser) { background: #f3f4f7; }
+:root[data-theme="light"] :is(.addressbar,.toolbar-menu,.account-tools-toggle,.capture-setting,.setting-row,.tool-box,.browser-settings-box,.dola-task-account) { background: #fafbfc; border-color: var(--ui-border); color: #414b5e; }
+:root[data-theme="light"] :is(input:not([type="checkbox"]),select,textarea) { background: #fff; border-color: #dde1e9; color: #303746; }
+:root[data-theme="light"] .toolbar-menu { box-shadow: 0 12px 36px #26334b20; }
+:root[data-theme="light"] .modal-backdrop { background: #3a44566b; }
+/* Reserve the Windows min/max/close strip. The strip exists because src/main/index.ts:129 passes
+   titleBarStyle:"hidden" + titleBarOverlay { height: 36 }; its width is decided by the OS, not by
+   anything this stylesheet can read, so this number is measured rather than derived. Measured in
+   the real renderer at the 1080px window: navigator.windowControlsOverlay reports a titlebar area
+   of 944px against innerWidth 1081 - i.e. 137px of controls.
+
+   The value is 137 + the clearance we want, and the clearance had to be re-derived when the
+   app-shell inset went away. While the shell kept a 10px padding the topbar ended 10px short of
+   the window edge, so 148px landed the last control 158px from that edge and left 21px of air.
+   The topbar is now flush, so the same 21px needs 158px. Re-measure if the control cluster or
+   the overlay config changes. */
+html[data-platform="windows"] .topbar { -webkit-app-region: drag; padding-right: 158px; }
+html[data-platform="windows"] .top-actions { -webkit-app-region: no-drag; }
+@media(max-width:1280px) {
+  html[data-platform="windows"] .top-actions { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+  html[data-platform="windows"] .toolbar-utilities { border-left: 0; }
+  html[data-platform="windows"] .topbar { min-height: 90px; height: 90px; }
+}
+
+.tab-count { flex-shrink: 0; padding: 0 9px; color: #7b8493; font-size: 10px; white-space: nowrap; }
+.tab-platform { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 6px; color: #fff; background: #2f6bed; font-size: 10px; font-weight: 700; }
+.media-card.video .media-card-actions button:not(.media-download-main):not(.media-preview-action):not(.media-channel) { background: #fff; color: #465167; border: 1px solid #d7dce5; }
+.media-card.video .media-card-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.video-notice-card { color: #2f3747; background: #fff; border-color: #c6d6f5; box-shadow: 0 16px 42px rgb(38 51 75 / 18%); }
+.video-notice-content span { color: #697386; }
+.video-notice-actions button { color: #465167; background: #fff; border-color: #d7dce5; }
+.video-notice-actions button:hover { background: #eef4ff; border-color: #9db9ef; }
+
+/* Settings uses a few legacy labels that are not .setting-row. Keep those
+   fields on the same white surface as the rest of the light workspace. */
+:root[data-theme="light"] .settings-list > label:not(.setting-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 13px;
+  border: 1px solid #e1e5ec;
+  border-radius: 10px;
+  background: #fff;
+  color: #2f3747;
+}
+
+:root[data-theme="light"] .settings-list > label:not(.setting-row) > span {
+  min-width: 0;
+}
+
+:root[data-theme="light"] .settings-list > label:not(.setting-row) small {
+  display: block;
+  margin-top: 4px;
+  color: #697386;
+  line-height: 1.45;
+}
+
+:root[data-theme="light"] .settings-list > label:not(.setting-row):focus-within {
+  border-color: #9db9ef;
+  box-shadow: 0 0 0 3px rgb(47 107 237 / 12%);
+}
+
+:root[data-theme="light"] :is(.settings-list .update-box, .settings-list .plugin-manager) {
+  border: 1px solid #e1e5ec;
+  background: #fff;
+  color: #2f3747;
+}
+
+:root[data-theme="light"] .settings-list .plugin-row {
+  border-color: #e1e5ec;
+  background: #fafbfc;
+  color: #2f3747;
+}
+
+:root[data-theme="light"] .settings-list .plugin-row small,
+:root[data-theme="light"] .settings-list .update-box small {
+  color: #697386;
+}
+
+/* Premium white workspace system. The previous layers still contain legacy
+   dark-theme declarations, so this block is intentionally last and owns the
+   final visual language for the workbench shell. */
+:root {
+  --ui-bg: #f5f7fb;
+  --ui-surface: #ffffff;
+  --ui-surface-soft: #fbfcfe;
+  --ui-surface-muted: #f0f3f8;
+  --ui-border: #e4e9f1;
+  --ui-border-strong: #d4dce8;
+  --ui-text: #182235;
+  --ui-text-secondary: #4b596d;
+  --ui-muted: #636d80; /* 5.2:1 on white, 4.7:1 on the tinted panels; #7b8798 failed AA */
+  --ui-primary: #376ee8;
+  --ui-primary-hover: #2f5fd0;
+  --ui-primary-soft: #edf3ff;
+  --ui-success: #169a73;
+  --ui-danger: #cb5b68;
+  --ui-shadow-sm: 0 2px 8px rgb(32 48 78 / 5%);
+  --ui-shadow-md: 0 12px 32px rgb(32 48 78 / 10%);
+  color-scheme: light;
+  background: var(--ui-bg) !important;
+  color: var(--ui-text) !important;
+}
+
+html,
+body,
+#root {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: Inter, "SF Pro Display", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.app-shell {
+  background: var(--ui-bg) !important;
+  color: var(--ui-text) !important;
+}
+
+.topbar {
+  height: 64px;
+  min-height: 64px;
+  padding: 0 20px;
+  gap: 20px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface) !important;
+  box-shadow: 0 1px 0 rgb(32 48 78 / 3%);
+}
+
+.brand {
+  min-width: 214px;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(145deg, #4a7df1, #6a61d8);
+  box-shadow: 0 8px 18px rgb(55 110 232 / 22%);
+  font-size: 12px;
+  letter-spacing: -.04em;
+}
+
+.brand strong {
+  color: var(--ui-text);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.025em;
+}
+
+.brand span {
+  margin-top: 3px;
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.top-actions {
+  gap: 12px;
+  align-items: center;
+}
+
+.toolbar-cluster {
+  gap: 4px;
+}
+
+.toolbar-primary {
+  padding-right: 12px;
+  border-right: 1px solid var(--ui-border);
+}
+
+.toolbar-utilities {
+  gap: 5px;
+  padding-left: 0;
+}
+
+.top-actions button {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--ui-text-secondary);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.top-actions button:hover,
+.top-actions button.active,
+.top-actions button[aria-pressed="true"] {
+  border-color: #c9d8f5;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+
+.toolbar-more > button span {
+  color: var(--ui-muted);
+}
+
+.toolbar-menu {
+  border-color: var(--ui-border-strong);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: var(--ui-shadow-md);
+  backdrop-filter: blur(16px);
+}
+
+.toolbar-menu button {
+  border-color: var(--ui-border);
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+}
+
+.toolbar-menu button:hover {
+  border-color: #bfd1f4;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.workspace {
+  grid-template-columns: 248px minmax(420px, 1fr) 320px;
+  gap: 10px;
+  padding: 10px;
+  background: var(--ui-bg);
+}
+
+.sidebar,
+.browser-panel {
+  border: 1px solid var(--ui-border) !important;
+  border-radius: 14px;
+  background: var(--ui-surface) !important;
+  box-shadow: var(--ui-shadow-sm);
+  color: var(--ui-text);
+  overflow: hidden;
+}
+
+.accounts-panel {
+  border-right: 1px solid var(--ui-border) !important;
+}
+
+.media-panel {
+  border-left: 1px solid var(--ui-border) !important;
+}
+
+.panel-title {
+  height: 70px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.panel-title h2 {
+  margin: 5px 0 0;
+  color: var(--ui-text);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.eyebrow {
+  color: #8a96a8;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+
+.accounts-panel > .search-box {
+  margin: 12px 14px 9px;
+}
+
+.search-box .search {
+  height: 36px;
+  padding: 9px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  color: var(--ui-text);
+  background: var(--ui-surface-soft);
+  box-shadow: none;
+}
+
+.search-box .search::placeholder {
+  color: #a0aaba;
+}
+
+.account-tools-toggle {
+  width: calc(100% - 28px);
+  margin: 0 14px 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface-soft);
+}
+
+.account-tools-toggle:hover {
+  border-color: #bfd1f4;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.account-tools-panel {
+  max-height: 40vh;
+  margin: 0 12px 10px;
+  padding: 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface-soft);
+}
+
+.account-tools-panel .group-toolbar,
+.account-tools-panel .account-actions,
+.account-tools-panel .batch-toolbar {
+  gap: 6px;
+}
+
+.account-tools-panel .group-toolbar select,
+.account-tools-panel button,
+.account-tools-panel .batch-toolbar button {
+  min-height: 31px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+}
+
+.account-tools-panel button:hover,
+.account-tools-panel button.active {
+  border-color: #bfd1f4;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.account-tools-panel button.danger,
+.account-tools-panel button.danger:hover {
+  border-color: #f0cbd0;
+  color: var(--ui-danger);
+  background: #fff7f8;
+}
+
+.account-group-header {
+  margin: 3px 0 4px;
+  padding: 8px 6px;
+  border-bottom: 1px solid #eef1f5;
+  border-radius: 0;
+  color: var(--ui-muted);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.account-group-header:hover {
+  color: var(--ui-text-secondary);
+  background: #f7f9fc;
+}
+
+.account-card {
+  min-height: 58px;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--ui-surface);
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.account-card:hover {
+  border-color: #d8e1ef;
+  background: #f9fbfe;
+  box-shadow: var(--ui-shadow-sm);
+  transform: translateY(-1px);
+}
+
+.account-card.selected {
+  border-color: #bfd1f4;
+  background: var(--ui-primary-soft);
+  box-shadow: inset 3px 0 var(--ui-primary);
+}
+
+.account-main::after {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: #8a97aa;
+  background: #f3f5f8;
+  content: '待打开';
+  font-size: 9px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.account-card.open .account-main::after {
+  color: #168363;
+  background: #ecfaf4;
+  content: '已打开';
+}
+
+.account-card.has-video-notice .account-main::after {
+  color: #7358ca;
+  background: #f2efff;
+  content: '新视频';
+}
+
+.account-main {
+  gap: 9px;
+  padding: 10px 8px;
+}
+
+.account-main strong {
+  color: var(--ui-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.account-main small {
+  margin-top: 3px;
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.platform-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.card-menu {
+  right: 6px;
+  top: 50%;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+  transform: translateY(-50%);
+}
+
+.card-menu button {
+  min-width: 25px;
+  min-height: 27px;
+  border-radius: 6px;
+  color: var(--ui-muted);
+}
+
+.card-menu button:hover {
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.panel-footer {
+  padding: 11px 14px;
+  border-top: 1px solid var(--ui-border);
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft);
+  font-size: 10px;
+}
+
+.tabs {
+  height: 50px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.tab-scroll {
+  gap: 4px;
+  align-items: flex-end;
+  padding: 0;
+}
+
+.tab {
+  min-width: 138px;
+  max-width: 216px;
+  height: 38px;
+  margin: 0;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  color: var(--ui-muted);
+  background: #f5f7fb;
+  font-size: 11px;
+}
+
+.tab:hover {
+  color: var(--ui-text-secondary);
+  background: #eef2f8;
+}
+
+.tab.active {
+  border-color: var(--ui-border);
+  color: #285dcc;
+  background: var(--ui-surface);
+  box-shadow: inset 0 2px var(--ui-primary);
+}
+
+.tab-platform {
+  width: 18px;
+  height: 18px;
+  margin-right: 5px;
+  border-radius: 6px;
+  background: var(--ui-primary);
+  font-size: 9px;
+}
+
+.tab-count {
+  padding: 0 8px 14px;
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.connection-state {
+  padding: 0 4px 14px 0;
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.browser-panel {
+  background: var(--ui-surface) !important;
+}
+
+.addressbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+.addressbar input {
+  height: 34px;
+  border-color: var(--ui-border);
+  border-radius: 9px;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+}
+
+.addressbar button {
+  height: 34px;
+  padding: 7px 13px;
+  border-color: var(--ui-border-strong);
+  border-radius: 9px;
+  color: #285dcc;
+  background: var(--ui-surface);
+}
+
+.addressbar button:hover:not(:disabled) {
+  border-color: #9db9ef;
+  background: var(--ui-primary-soft);
+}
+
+.view-grid {
+  gap: 1px;
+  background: var(--ui-border);
+}
+
+.view-slot,
+.empty-browser {
+  background: var(--ui-surface) !important;
+}
+
+.statusbar {
+  height: 30px;
+  gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid var(--ui-border);
+  color: var(--ui-muted);
+  background: var(--ui-surface-soft) !important;
+  font-size: 10px;
+}
+
+.statusbar-label {
+  color: var(--ui-muted);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.statusbar-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: var(--ui-success);
+  box-shadow: 0 0 0 3px rgb(22 154 115 / 12%);
+}
+
+.media-panel-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.count-badge,
+.queue-badge {
+  min-width: 25px;
+  padding: 4px 8px;
+  border: 1px solid #cbd9f4;
+  border-radius: 999px;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+  font-size: 10px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.queue-badge {
+  border-color: #bfe5d8;
+  color: var(--ui-success);
+  background: #effaf6;
+}
+
+.capture-setting {
+  margin: 12px 14px 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 11px;
+  background: var(--ui-surface-soft);
+}
+
+.capture-setting strong {
+  color: var(--ui-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.capture-setting small {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.capture-switch {
+  width: 36px;
+  height: 21px;
+  background: #b6bfcc;
+}
+
+.capture-switch[aria-checked="true"] {
+  background: var(--ui-primary);
+}
+
+.segmented {
+  margin: 0 14px 10px;
+  padding: 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-muted);
+}
+
+.segmented button {
+  padding: 7px 6px;
+  border-radius: 7px;
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.segmented button.active {
+  color: #285dcc;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.media-batch button,
+.media-footer button {
+  min-height: 32px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 9px;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.media-batch button:hover,
+.media-footer button:hover {
+  border-color: #9db9ef;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.media-card {
+  margin-bottom: 11px;
+  border: 1px solid var(--ui-border);
+  border-radius: 13px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+  overflow: hidden;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.media-card:hover {
+  border-color: #cbd9f0;
+  box-shadow: var(--ui-shadow-md);
+  transform: translateY(-1px);
+}
+
+.media-card > input {
+  top: 9px;
+  left: 9px;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ui-primary);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 15%));
+}
+
+.media-preview {
+  height: 142px;
+  background: #eef2f8;
+}
+
+.media-preview .preview-hint {
+  color: #fff;
+  background: rgb(22 34 54 / 72%);
+}
+
+.media-info {
+  gap: 0;
+  padding: 10px 11px 11px;
+}
+
+.media-info strong {
+  color: var(--ui-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.media-info small {
+  margin-top: 4px;
+  color: var(--ui-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.media-card-actions,
+.media-card.video .media-card-actions {
+  position: relative;
+  z-index: 4;
+  top: auto;
+  left: auto;
+  width: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.media-card-actions button,
+.media-card.video .media-card-actions button {
+  min-width: 0;
+  min-height: 30px;
+  padding: 6px 7px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 8px;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-card-actions button:hover {
+  border-color: #9db9ef;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.media-card-actions .media-download-main {
+  grid-column: 1 / -1;
+  border-color: var(--ui-primary);
+  color: #fff !important;
+  background: var(--ui-primary) !important;
+  font-weight: 700;
+}
+
+.media-card-actions .media-download-main:hover {
+  border-color: var(--ui-primary-hover);
+  background: var(--ui-primary-hover) !important;
+}
+
+.media-card-actions .media-preview-action {
+  grid-column: 1 / -1;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+/* Only the grid placement is live here; the colour declarations that used to sit
+   alongside it lost to the dash layer's channel rules and never painted. */
+.media-card-actions .media-channel {
+  grid-column: auto !important;
+}
+
+.media-card-actions button:not(.media-download-main):not(.media-preview-action):not(.media-channel) {
+  background: var(--ui-surface-soft);
+}
+
+.download-tasks {
+  max-height: 136px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+.download-tasks > div {
+  min-height: 30px;
+  padding: 5px 10px;
+  border-bottom: 1px solid #edf0f5;
+  color: var(--ui-text-secondary);
+}
+
+.download-tasks small,
+.task-queue-header,
+.task-queue-header small {
+  color: var(--ui-muted);
+}
+
+.task-queue-header {
+  padding: 9px 10px 5px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+}
+
+.media-footer {
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 10px 14px 13px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: 0 -6px 18px rgb(32 48 78 / 4%);
+}
+
+.media-footer button:last-child {
+  grid-column: 1 / -1;
+}
+
+.modal-backdrop {
+  padding: 20px;
+  background: rgb(33 45 68 / 38%);
+  backdrop-filter: blur(10px);
+}
+
+.modal,
+.modal.settings-modal {
+  width: min(780px, 92vw);
+  max-height: 90vh;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 18px;
+  background: var(--ui-surface);
+  box-shadow: 0 26px 70px rgb(29 43 68 / 22%);
+  color: var(--ui-text);
+}
+
+.modal.wide {
+  width: min(920px, 92vw);
+}
+
+.modal > header {
+  min-height: 60px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+.modal > header h2 {
+  color: var(--ui-text);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.modal > header button {
+  color: #8c98aa;
+}
+
+.modal > header button:hover {
+  color: var(--ui-danger);
+  background: #fff1f3;
+}
+
+.modal-body {
+  padding: 18px;
+  background: var(--ui-surface);
+}
+
+.settings-list {
+  gap: 9px;
+}
+
+.settings-list > label:not(.setting-row) {
+  min-height: 52px;
+  padding: 10px 13px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface-soft);
+}
+
+.settings-list > label:not(.setting-row):hover {
+  border-color: #cbd9f0;
+  background: #f8faff;
+}
+
+.settings-list > label.wide {
+  min-height: 64px;
+}
+
+.settings-list > label:not(.setting-row) > span,
+.settings-list > label:not(.setting-row) > strong {
+  min-width: 0;
+  color: var(--ui-text-secondary);
+}
+
+.settings-list > label:not(.setting-row) small {
+  color: var(--ui-muted);
+  font-size: 10px;
+}
+
+.settings-list .setting-row,
+.settings-list .tool-box,
+.settings-list .update-box,
+.settings-list .boss-key,
+.settings-list .adapter-switches,
+.settings-list .plugin-manager {
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface-soft);
+  color: var(--ui-text);
+}
+
+.settings-list .setting-row {
+  min-height: 54px;
+  padding: 11px 13px;
+}
+
+.settings-list .setting-row strong,
+.settings-list .tool-box strong,
+.settings-list .update-box strong,
+.settings-list .plugin-manager strong {
+  color: var(--ui-text);
+}
+
+.settings-list .tool-box,
+.settings-list .plugin-manager,
+.settings-list .update-box,
+.settings-list .boss-key,
+.settings-list .adapter-switches {
+  margin-top: 3px;
+  padding: 13px;
+}
+
+.settings-list .tool-box + .tool-box,
+.settings-list .tool-box + .update-box,
+.settings-list .update-box + .boss-key,
+.settings-list .boss-key + .adapter-switches,
+.settings-list .adapter-switches + .plugin-manager {
+  margin-top: 5px;
+}
+
+.settings-list input:not([type="checkbox"]),
+.settings-list select,
+.settings-list textarea {
+  min-height: 34px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 9px;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+}
+
+.settings-list input[type="checkbox"] {
+  accent-color: var(--ui-primary);
+}
+
+.settings-list .directory-setting {
+  border-color: #edf0f5;
+}
+
+.settings-list .directory-setting small,
+.settings-list .section-heading small,
+.settings-list .form-hint,
+.settings-list .plugin-row small {
+  color: var(--ui-muted);
+}
+
+.settings-list .plugin-row {
+  border-color: var(--ui-border);
+  border-radius: 9px;
+  background: var(--ui-surface);
+}
+
+.settings-list .account-tools button,
+.settings-list .tool-box button,
+.settings-list .update-box button,
+.settings-list .plugin-row button {
+  min-height: 31px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 8px;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+}
+
+.settings-list .account-tools button:hover,
+.settings-list .tool-box button:hover,
+.settings-list .update-box button:hover,
+.settings-list .plugin-row button:hover {
+  border-color: #9db9ef;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.empty-browser {
+  background: radial-gradient(circle at 50% 30%, #eaf1ff, transparent 52%), var(--ui-surface) !important;
+}
+
+.empty-browser .orb {
+  color: var(--ui-primary);
+}
+
+.empty-browser h1 {
+  color: var(--ui-text);
+}
+
+.empty-browser p {
+  color: var(--ui-muted);
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    height: 72px;
+    min-height: 72px;
+    padding: 0 14px;
+    gap: 12px;
+  }
+
+  .brand {
+    min-width: 190px;
+  }
+
+  .top-actions {
+    gap: 7px;
+  }
+
+  .toolbar-primary {
+    padding-right: 7px;
+  }
+
+  .toolbar-primary button {
+    width: 35px;
+    min-width: 35px;
+    padding: 8px;
+    font-size: 0;
+  }
+
+  .workspace {
+    grid-template-columns: 224px minmax(300px, 1fr) 300px;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .workspace.resources-collapsed {
+    grid-template-columns: 224px minmax(300px, 1fr);
+  }
+}
+
+
+
+
+
+/* The flex toolbar fills the unused header width. Keep that empty space
+   draggable on Windows and opt only the actual controls out of the caption
+   region. */
+html[data-platform="windows"] .top-actions {
+  -webkit-app-region: drag;
+}
+
+html[data-platform="windows"] .top-actions button,
+html[data-platform="windows"] .top-actions input,
+html[data-platform="windows"] .top-actions select,
+html[data-platform="windows"] .top-actions .toolbar-menu,
+html[data-platform="windows"] .top-actions .toolbar-menu button {
+  -webkit-app-region: no-drag;
+}
+
+/* Consistent icon language for primary actions and compact controls. */
+.icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+button > .icon,
+.account-tools-toggle > span > .icon,
+.account-group-header > span > .icon,
+.tab-context-menu button > .icon {
+  pointer-events: none;
+}
+
+.toolbar-primary button,
+.toolbar-media-toggle,
+.toolbar-library,
+.toolbar-more-trigger,
+.toolbar-settings,
+.account-tools-toggle,
+.tab-context-menu button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Older theme layers used pseudo glyphs for these buttons. The inline SVG is
+   the single source of truth now, so suppress the legacy glyphs. */
+.toolbar-primary button::before,
+.toolbar-media-toggle::before,
+.toolbar-library::before,
+.toolbar-more-trigger::before,
+.toolbar-settings::before {
+  content: none !important;
+  display: none !important;
+}
+
+.toolbar-more-trigger > span:not(.button-label) {
+  display: inline-flex;
+  margin: 0;
+  color: inherit;
+}
+
+.account-tools-toggle > span:first-child,
+.account-group-header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-tools-toggle > .icon,
+.account-group-header > span > .icon {
+  color: #7d8ba0;
+}
+
+.account-tools-toggle:hover > .icon,
+.account-group-header:hover > span > .icon {
+  color: var(--ui-primary);
+}
+
+.card-menu .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The tab's close control moved out of the tab button (see App.tsx) so it can be a real
+   focusable button; its box used to be drawn by the .tab i / .tab > i rules here. */
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ui-muted);
+  cursor: pointer;
+}
+
+.tab .tab-close:hover {
+  color: var(--ui-danger);
+  background: #fff1f3;
+}
+
+.tab-context-menu {
+  position: fixed;
+  z-index: 12000;
+  display: grid;
+  min-width: 216px;
+  padding: 6px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  box-shadow: 0 18px 46px rgb(32 48 78 / 18%);
+}
+
+.tab-context-menu button {
+  justify-content: flex-start;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ui-text-secondary);
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+}
+
+.tab-context-menu button:hover {
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.tab-context-menu button:last-child:hover {
+  color: var(--ui-danger);
+  background: #fff4f5;
+}
+
+.tab[draggable="true"] {
+  cursor: grab;
+}
+
+.tab[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Keep the download card hierarchy obvious: primary action, preview, then
+   compact utility actions. The card remains usable at the narrowest panel. */
+.media-card {
+  position: relative;
+}
+
+.media-card::before {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 21px;
+  padding: 2px 7px;
+  border: 1px solid rgb(255 255 255 / 65%);
+  border-radius: 999px;
+  color: #fff;
+  background: rgb(28 40 62 / 62%);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  content: '素材';
+  pointer-events: none;
+}
+
+.media-card.video::before {
+  content: '视频';
+}
+
+.media-card.image::before {
+  content: '图片';
+}
+
+.media-card-actions .media-download-main,
+.media-card-actions .media-preview-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.media-card-actions .media-download-main::before {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  content: '';
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2' stroke-linecap='round' d='M12 4v10m-4-3 4 4 4-4M5 20h14'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.media-card-actions .media-preview-action::before {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  content: '';
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='5' width='18' height='14' rx='2' fill='none' stroke='black' stroke-width='2'/%3E%3Cpath d='m10 9 5 3-5 3z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.media-card-actions .media-channel {
+  font-size: 9px;
+}
+
+.media-info > small {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.settings-modal .modal-body {
+  padding: 0;
+}
+
+.settings-modal-layout {
+  display: grid;
+  grid-template-columns: 154px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.settings-nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 100%;
+  height: max-content;
+  padding: 15px 10px;
+  border-right: 1px solid var(--ui-border);
+  background: #fbfcfe;
+}
+
+.settings-nav-caption {
+  padding: 4px 9px 8px;
+  color: var(--ui-muted);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.settings-nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ui-text-secondary);
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+}
+
+.settings-nav button:hover {
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+}
+
+.settings-nav button.active {
+  border-color: #cbd9f4;
+  color: #285dcc;
+  background: var(--ui-primary-soft);
+  font-weight: 700;
+}
+
+.settings-nav button .icon {
+  color: #8a97aa;
+}
+
+.settings-nav button.active .icon {
+  color: var(--ui-primary);
+}
+
+.settings-content {
+  min-width: 0;
+  padding: 18px;
+}
+
+.settings-content [data-settings-section] {
+  scroll-margin-top: 16px;
+}
+
+.empty-browser .primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.addressbar .icon {
+  color: #8290a5;
+}
+
+.addressbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+
+
+/* Crextio-inspired card dashboard skin. Keep the workbench information
+   architecture and native browser surfaces intact, while giving every panel
+   the same soft card language and a calmer visual hierarchy. */
+:root {
+  /* --dash-bg, --dash-bg-warm and --dash-radius went with the gradient page and the rounded
+     panels - nothing references them once the frame is flat. */
+  --dash-card: #ffffff;
+  --dash-card-soft: #fbfcf8;
+  --dash-ink: #20252c;
+  --dash-muted: #5e6871; /* about 5:1 on white; #77818b measured 3.96:1 */
+  --dash-line: rgb(31 40 49 / 10%);
+  --dash-yellow: #ffd34f;
+  --dash-yellow-soft: #fff4b9;
+  --dash-green-soft: #e8f4e9;
+  --dash-shadow: 0 16px 40px rgb(36 45 52 / 8%);
+  --dash-shadow-soft: 0 7px 22px rgb(36 45 52 / 6%);
+}
+
+html,
+body,
+#root {
+  color: var(--dash-ink);
+}
+
+/* The warm page gradient and the 10px inset that .app-shell carried are gone - see the
+   flattened-layout section at the end of this file, which is where the shell, the panels and
+   the rows are now defined. Deleting them here rather than leaving them overridden keeps one
+   source of truth for the frame. */
+
+.topbar {
+  min-height: 66px;
+  height: 66px;
+  padding: 0 16px 0 18px;
+  gap: 14px;
+  border: 1px solid var(--dash-line);
+  background: rgb(255 255 255 / 92%) !important;
+  box-shadow: var(--dash-shadow-soft);
+}
+
+.brand {
+  min-width: 218px;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  color: var(--dash-ink);
+  background: var(--dash-yellow);
+  box-shadow: none;
+  font-weight: 800;
+}
+
+.brand strong {
+  color: var(--dash-ink);
+  font-size: 15px;
+}
+
+.brand span {
+  color: var(--dash-muted);
+}
+
+.top-actions {
+  gap: 8px;
+}
+
+.toolbar-cluster {
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 74%);
+}
+
+.toolbar-primary {
+  padding-right: 4px;
+  border-right: 0;
+}
+
+.toolbar-utilities {
+  padding-left: 4px;
+}
+
+.top-actions button {
+  min-height: 32px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.top-actions button:hover,
+.top-actions button.active,
+.top-actions button[aria-pressed="true"] {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow);
+  box-shadow: 0 5px 13px rgb(219 178 30 / 18%);
+}
+
+.toolbar-more > button span {
+  color: inherit;
+}
+
+.toolbar-menu {
+  top: calc(100% + 10px);
+  border: 1px solid var(--dash-line);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: var(--dash-shadow);
+}
+
+.toolbar-menu button {
+  border-color: transparent;
+  border-radius: 10px;
+  color: var(--dash-ink);
+  background: transparent;
+}
+
+.toolbar-menu button:hover {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+}
+
+.workspace {
+  grid-template-columns: 248px minmax(420px, 1fr) 320px;
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+}
+
+.workspace.resources-collapsed {
+  grid-template-columns: 248px minmax(420px, 1fr);
+}
+
+/* .sidebar / .browser-panel lost their card chrome (border, 22px radius, fill, shadow) and
+   .accounts-panel / .media-panel lost the zeroed side borders, both to the flattened-layout
+   section at the end of this file. Removed here so the panels have one definition. */
+
+.panel-title {
+  height: 72px;
+  padding: 17px 17px 12px;
+  border-bottom: 1px solid var(--dash-line);
+  background: var(--dash-card);
+}
+
+.panel-title h2 {
+  margin-top: 5px;
+  color: var(--dash-ink);
+  font-size: 17px;
+  letter-spacing: -.03em;
+}
+
+.eyebrow {
+  color: var(--ui-muted);
+  letter-spacing: .18em;
+}
+
+.panel-title .icon-button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--dash-ink);
+  background: var(--dash-yellow);
+  box-shadow: none;
+}
+
+.accounts-panel > .search-box {
+  margin: 13px 14px 9px;
+}
+
+.search-box .search {
+  height: 38px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-ink);
+  background: var(--dash-card-soft);
+}
+
+.search-box kbd {
+  border: 0;
+  border-radius: 999px;
+  color: #a5ada9;
+  background: transparent;
+}
+
+.account-tools-toggle {
+  width: calc(100% - 28px);
+  margin: 0 14px 10px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: var(--dash-card-soft);
+}
+
+.account-tools-toggle:hover {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+}
+
+.account-tools-panel {
+  margin: 0 12px 10px;
+  padding: 10px;
+  border: 1px solid var(--dash-line);
+  border-radius: 17px;
+  background: #f8faf7;
+}
+
+.account-tools-panel .group-toolbar select,
+.account-tools-panel button,
+.account-tools-panel .batch-toolbar button {
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: var(--dash-card);
+}
+
+.account-tools-panel button:hover,
+.account-tools-panel button.active {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+}
+
+/* The batch toolbar is deliberately NOT pinned with position:sticky, though that is the obvious
+   way to keep it reachable - the panel scrolls at every window size the app allows (447px of
+   content against a 40vh cap). Measured, pinning it is a net loss: the row is 150px tall (7
+   buttons in 2 columns), while at the 1080x680 minimum the panel's whole visible box is only
+   189px, so a pinned row would cover 10 of the panel's 20 controls - both filter selects and
+   import/export included - to reveal the panel's last row. A rule that is harmless at 1440x900
+   but hides the primary controls at the app's own declared minimum is not worth having; the
+   panel already scrolls by design, so the batch row is one scroll away instead. What the column
+   actually needed was the account list's floor (see .account-list above). */
+
+.account-tools-panel button.danger,
+.account-tools-panel button.danger:hover {
+  border-color: #f1d4d4;
+  color: #b86163;
+  background: #fff6f6;
+}
+
+.account-list {
+  padding: 0 12px;
+  /* Floor for the account list. The tools panel above it holds 18 controls (~447px of content) in
+     this 248px-wide column, capped by max-height, so the list is whatever gets squeezed: at the
+     1080x680 minimum window, with the panel open, it measured 66px tall - about one card.
+     The floor is also what makes the flex split do the right thing. The panel is flex: 0 1 auto
+     with a content-sized basis, and the list's flex-basis is 0, so every spare pixel of shrinkage
+     lands on the panel once the list refuses to shrink below this. Measured at 1080x680:
+     list 66 -> 150px, panel 273 -> 199px. Both still scroll; neither collapses.
+     (Measured through the GUI smoke harness, whose viewport is 1081x682 at that size. The shipped
+     window carries a 36px titleBarOverlay and so has a few pixels less height, which only makes
+     the squeeze tighter - this is the optimistic case, and the floor holds in both.) */
+  min-height: 150px;
+}
+
+.account-group-header {
+  margin: 4px 0 5px;
+  padding: 8px 6px;
+  border-bottom: 1px dashed var(--dash-line);
+  color: var(--ui-muted);
+}
+
+.account-group-header:hover {
+  color: var(--dash-ink);
+  background: transparent;
+}
+
+.account-card {
+  min-height: 62px;
+  margin-bottom: 7px;
+  border: 1px solid var(--dash-line);
+  border-radius: 16px;
+  background: var(--dash-card);
+  box-shadow: 0 2px 0 rgb(255 255 255 / 80%);
+}
+
+.account-card:hover {
+  border-color: rgb(32 37 44 / 16%);
+  background: var(--dash-card);
+  box-shadow: var(--dash-shadow-soft);
+  transform: translateY(-1px);
+}
+
+.account-card.selected {
+  border-color: var(--dash-ink);
+  background: var(--dash-ink);
+  box-shadow: var(--dash-shadow-soft);
+}
+
+.account-card.selected .account-main strong,
+.account-card.selected .account-main small {
+  color: #fff;
+}
+
+.account-card.selected .account-main::after {
+  color: var(--dash-ink);
+  background: var(--dash-yellow);
+}
+
+.account-main {
+  gap: 9px;
+  padding: 11px 8px;
+}
+
+.account-main strong {
+  color: var(--dash-ink);
+}
+
+.account-main small {
+  color: var(--dash-muted);
+}
+
+.account-main::after {
+  color: #929b95;
+  background: #f1f3ef;
+}
+
+.account-card.open:not(.selected) .account-main::after {
+  color: #438157;
+  background: var(--dash-green-soft);
+}
+
+.platform-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 11px;
+}
+
+.card-menu {
+  border: 1px solid var(--dash-line);
+  border-radius: 10px;
+  background: var(--dash-card);
+  box-shadow: var(--dash-shadow-soft);
+}
+
+.panel-footer {
+  padding: 12px 15px;
+  border-top: 1px solid var(--dash-line);
+  color: var(--dash-muted);
+  background: var(--dash-card-soft);
+}
+
+.tabs {
+  height: 56px;
+  padding: 8px 10px 0;
+  border-bottom: 1px solid var(--dash-line);
+  background: var(--dash-card);
+}
+
+.tab-scroll {
+  gap: 6px;
+  align-items: center;
+}
+
+.tab {
+  min-width: 130px;
+  height: 40px;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: #f4f6f3;
+}
+
+.tab:hover {
+  color: var(--dash-ink);
+  background: #eef1ed;
+}
+
+.tab.active {
+  border-color: var(--dash-ink);
+  color: #fff;
+  background: var(--dash-ink);
+  box-shadow: none;
+}
+
+.tab.active .tab-platform {
+  color: var(--dash-ink);
+  background: var(--dash-yellow);
+}
+
+.tab-platform {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #d7ddd8;
+}
+
+/* .tab is now a wrapper holding two sibling buttons - the selectable tab and its close
+   control - so the wrapper keeps all the pill styling and the tab button is a bare hit area. */
+.tab-select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tab.active .tab-close,
+.tab.active .tab-label-text {
+  color: #fff;
+}
+
+/* the white base above would otherwise outrank the shared .tab-close:hover on the active tab */
+.tab.active .tab-close:hover {
+  color: var(--ui-danger);
+  background: #fff1f3;
+}
+
+.tab-count,
+.connection-state {
+  padding-bottom: 4px;
+  color: var(--dash-muted);
+}
+
+.browser-panel {
+  background: var(--dash-card) !important;
+}
+
+.addressbar {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--dash-line);
+  background: #f7f9f6;
+}
+
+.addressbar input {
+  height: 36px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  background: var(--dash-card);
+}
+
+.addressbar button {
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--dash-ink);
+  background: var(--dash-yellow);
+}
+
+.addressbar button:hover:not(:disabled) {
+  border-color: transparent;
+  background: #f7c936;
+}
+
+.view-grid {
+  gap: 8px;
+  padding: 8px;
+  background: #eef1ef;
+}
+
+.view-slot,
+.empty-browser {
+  border-radius: 16px;
+  background: var(--dash-card) !important;
+}
+
+.empty-browser {
+  margin: 10px;
+  box-shadow: var(--dash-shadow-soft);
+}
+
+.empty-browser .orb {
+  background: var(--dash-yellow);
+  box-shadow: 0 12px 26px rgb(219 178 30 / 22%);
+}
+
+.empty-browser h1 {
+  color: var(--dash-ink);
+}
+
+.empty-browser p {
+  color: var(--dash-muted);
+}
+
+/* Only border-radius is live here; the ink background/border/colour all lose to the
+   !important declarations on .primary and never painted. */
+.empty-browser .primary {
+  border-radius: 999px;
+}
+
+.statusbar {
+  height: 34px;
+  margin: 0 8px 8px;
+  padding: 0 12px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: #f7f9f6 !important;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background: #63a477;
+  box-shadow: 0 0 0 4px rgb(99 164 119 / 12%);
+}
+
+.media-panel-title {
+  align-items: center;
+}
+
+.count-badge,
+.queue-badge {
+  min-width: 28px;
+  border: 0;
+  color: var(--dash-ink);
+  background: var(--dash-yellow);
+}
+
+.queue-badge {
+  color: #39734c;
+  background: var(--dash-green-soft);
+}
+
+.capture-setting {
+  margin: 13px 14px 10px;
+  padding: 12px 13px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: #fff7cd;
+}
+
+.capture-setting strong {
+  color: var(--dash-ink);
+}
+
+.capture-setting small {
+  color: var(--ui-muted);
+}
+
+.capture-switch {
+  background: #c1c7c2;
+}
+
+.capture-switch[aria-checked="true"] {
+  background: var(--dash-ink);
+}
+
+.segmented {
+  margin: 0 14px 10px;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: #eef1ed;
+}
+
+.segmented button {
+  padding: 7px 6px;
+  border-radius: 999px;
+  color: var(--dash-muted);
+}
+
+.segmented button.active {
+  color: var(--dash-ink);
+  background: var(--dash-card);
+  box-shadow: var(--dash-shadow-soft);
+}
+
+.media-batch {
+  gap: 6px;
+  padding: 0 14px 11px;
+}
+
+.media-batch button,
+.media-footer button {
+  min-height: 33px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: var(--dash-card);
+}
+
+.media-batch button:hover,
+.media-footer button:hover {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+}
+
+.media-list {
+  padding: 0 14px;
+}
+
+.media-card {
+  margin-bottom: 12px;
+  border: 1px solid var(--dash-line);
+  border-radius: 18px;
+  background: var(--dash-card);
+  box-shadow: var(--dash-shadow-soft);
+}
+
+.media-card:hover {
+  border-color: rgb(32 37 44 / 16%);
+  box-shadow: var(--dash-shadow);
+}
+
+.media-preview {
+  height: 144px;
+  background: #edf1ef;
+}
+
+.media-preview .preview-hint {
+  border-radius: 999px;
+  background: rgb(32 37 44 / 76%);
+}
+
+.media-info {
+  padding: 11px 12px 12px;
+}
+
+.media-info strong {
+  color: var(--dash-ink);
+}
+
+.media-info small {
+  color: var(--dash-muted);
+}
+
+.media-card-actions button,
+.media-card.video .media-card-actions button {
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: var(--dash-card);
+}
+
+/* !important is load-bearing: the base declarations this must override are set by
+   higher-specificity rules in the older layers, so without it the fill never painted and
+   hovering a channel, a preview or a utility button gave no feedback at all. Measured:
+   pointer confirmed on target, computed background unchanged.
+   The primary is excluded because it carries its own :hover - sharing this rule with it
+   turned its label dark on a dark fill under the cursor. */
+.media-card-actions button:not(.media-download-main):hover {
+  border-color: transparent !important;
+  color: var(--dash-ink) !important;
+  background: var(--dash-yellow-soft) !important;
+}
+
+.media-card-actions .media-download-main {
+  border-color: var(--dash-ink) !important;
+  color: #fff !important;
+  background: var(--dash-ink) !important;
+}
+
+.media-card-actions .media-download-main:hover {
+  border-color: #000 !important;
+  background: #000 !important;
+}
+
+.media-card-actions .media-preview-action {
+  color: var(--dash-ink);
+  background: #f7f9f6;
+}
+
+/* Channels used to be painted in `--dash-yellow-soft` - the hover colour declared
+   for every other button in this card - so all three sat in a permanent hover state
+   and out-shouted the primary action, with a second yellow and a green distinguishing
+   three buttons that run the same download. They now inherit the shared secondary
+   treatment and hover like their siblings, which leaves the dark ink pill as the only
+   loud thing on the card.
+
+   Grouping is positional instead: the utility buttons follow 下载/预览/渠道 in the DOM,
+   so forcing the first one onto a fresh row keeps 打开链接 and 复制链接 out of the
+   channel grid. Without it the 2-column flow put 3渠道下载 and 打开链接 side by side
+   and left 复制链接 alone on a half-empty row. */
+.media-card-actions
+  :is(.media-download-main, .media-preview-action, .media-channel)
+  + button:not(.media-download-main):not(.media-preview-action):not(.media-channel) {
+  grid-column-start: 1;
+}
+
+.task-queue-header,
+.download-tasks {
+  border-color: var(--dash-line);
+  background: #f7f9f6;
+}
+
+.task-queue-header {
+  margin: 8px 14px 0;
+  padding: 10px 12px 6px;
+  border: 1px solid var(--dash-line);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+}
+
+.download-tasks {
+  margin: 0 14px;
+  border: 1px solid var(--dash-line);
+  border-radius: 0 0 14px 14px;
+}
+
+.download-tasks > div {
+  border-bottom-color: var(--dash-line);
+}
+
+.media-footer {
+  gap: 7px;
+  padding: 11px 14px 14px;
+  border-top: 1px solid var(--dash-line);
+  background: var(--dash-card);
+  box-shadow: none;
+}
+
+.modal-backdrop {
+  background: rgb(44 52 57 / 26%);
+  backdrop-filter: blur(12px);
+}
+
+.modal,
+.modal.settings-modal {
+  border: 1px solid var(--dash-line);
+  border-radius: 24px;
+  background: var(--dash-card);
+  box-shadow: 0 28px 78px rgb(32 39 43 / 20%);
+}
+
+.modal > header {
+  min-height: 64px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--dash-line);
+  background: var(--dash-card);
+}
+
+.modal > header h2 {
+  color: var(--dash-ink);
+}
+
+.modal-body {
+  background: var(--dash-card);
+}
+
+.settings-nav {
+  border-right: 1px solid var(--dash-line);
+  background: #f7f9f6;
+}
+
+.settings-nav button {
+  border: 0;
+  border-radius: 999px;
+  color: var(--dash-muted);
+}
+
+.settings-nav button:hover,
+.settings-nav button.active {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+}
+
+.settings-nav button.active .icon {
+  color: var(--dash-ink);
+}
+
+.settings-content {
+  background: var(--dash-card);
+}
+
+.settings-list > label:not(.setting-row),
+.settings-list .setting-row,
+.settings-list .tool-box,
+.settings-list .update-box,
+.settings-list .boss-key,
+.settings-list .adapter-switches,
+.settings-list .plugin-manager {
+  border-color: var(--dash-line);
+  border-radius: 17px;
+  background: #fbfcf9;
+}
+
+.settings-list > label:not(.setting-row):hover {
+  border-color: transparent;
+  background: #fffdf0;
+}
+
+.settings-list .tool-box,
+.settings-list .plugin-manager,
+.settings-list .update-box,
+.settings-list .boss-key,
+.settings-list .adapter-switches {
+  padding: 15px;
+}
+
+.settings-list button.primary,
+.settings-content button.primary {
+  border-radius: 999px;
+}
+
+/* The primary action had no hover feedback at all: the rule that was supposed to give it
+   some set background:#000 without !important, and the base .primary cannot be overridden
+   by a normal declaration. Matching !important is what makes this one actually paint. */
+.primary:hover {
+  background: linear-gradient(135deg, #5538d4, var(--ui-primary-hover)) !important;
+}
+
+@media (max-width: 1280px) {
+  .app-shell {
+    padding: 8px;
+  }
+
+  .topbar {
+    border-radius: 18px;
+  }
+
+  .workspace {
+    gap: 8px;
+  }
+}
+
+
+
+/* Fingerprint editor hierarchy: expose the safe summary first and keep the
+   long UA-CH/rendering knobs available without making every account edit feel
+   like a diagnostics form. */
+.fingerprint-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 15px;
+  border: 1px solid var(--dash-line);
+  border-radius: 19px;
+  background: #f8faf7;
+}
+
+.fingerprint-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fingerprint-head .section-heading {
+  min-width: 0;
+  margin: 0;
+}
+
+.fingerprint-head .section-heading strong {
+  color: var(--dash-ink);
+  font-size: 14px;
+}
+
+.fingerprint-head .section-heading small {
+  max-width: 640px;
+  color: var(--dash-muted);
+}
+
+.fingerprint-health {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 27px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #4a8059;
+  background: var(--dash-green-soft);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.fingerprint-health i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #61a477;
+}
+
+.fingerprint-health.check {
+  color: #996f1d;
+  background: #fff2c6;
+}
+
+.fingerprint-health.check i {
+  background: #d59d24;
+}
+
+.fingerprint-health.off {
+  color: var(--dash-muted);
+  background: #eef1ed;
+}
+
+.fingerprint-health.off i {
+  background: #a8b0aa;
+}
+
+.fingerprint-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fingerprint-summary > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid var(--dash-line);
+  border-radius: 14px;
+  background: var(--dash-card);
+}
+
+.fingerprint-summary span {
+  color: #98a19b;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.fingerprint-summary strong {
+  overflow: hidden;
+  color: var(--dash-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fingerprint-summary small {
+  overflow: hidden;
+  color: var(--dash-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fingerprint-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: var(--dash-yellow-soft);
+}
+
+.fingerprint-toggle-row .switch-row {
+  color: var(--dash-ink);
+  font-weight: 700;
+}
+
+.fingerprint-toggle-row > span {
+  overflow: hidden;
+  color: #927c38;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fingerprint-warnings,
+.fingerprint-ok {
+  padding: 10px 12px;
+  border-radius: 13px;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.fingerprint-warnings {
+  border: 1px solid #eed8a0;
+  color: #86651d;
+  background: #fff9e8;
+}
+
+.fingerprint-warnings strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #765614;
+}
+
+.fingerprint-warnings ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.fingerprint-ok {
+  color: #4b7b57;
+  background: var(--dash-green-soft);
+}
+
+.fingerprint-ok span {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #67a477;
+  font-size: 10px;
+  font-weight: 800;
+  vertical-align: -3px;
+}
+
+.fingerprint-section {
+  overflow: hidden;
+  border: 1px solid var(--dash-line);
+  border-radius: 15px;
+  background: var(--dash-card);
+}
+
+.fingerprint-section > summary {
+  display: flex;
+  position: relative;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 45px;
+  padding: 10px 12px;
+  color: var(--dash-ink);
+  cursor: pointer;
+  list-style: none;
+}
+
+.fingerprint-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fingerprint-section > summary::after {
+  flex: 0 0 auto;
+  color: #a0aaa3;
+  content: '＋';
+  font-size: 15px;
+}
+
+.fingerprint-section[open] > summary::after {
+  content: '－';
+}
+
+.fingerprint-section > summary:hover {
+  background: #fffdf0;
+}
+
+.fingerprint-section > summary span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fingerprint-section > summary small {
+  margin-left: auto;
+  color: var(--dash-muted);
+  font-size: 10px;
+}
+
+.fingerprint-section > .form-grid {
+  margin: 0;
+  padding: 0 12px 13px;
+}
+
+.fingerprint-section .fingerprint-grid label {
+  color: var(--dash-muted);
+}
+
+.fingerprint-section .fingerprint-grid input,
+.fingerprint-section .fingerprint-grid select {
+  border-color: var(--dash-line);
+  border-radius: 10px;
+  color: var(--dash-ink);
+  background: #f9fbf8;
+}
+
+.fingerprint-actions {
+  align-items: center;
+  gap: 7px;
+  margin-top: 0;
+}
+
+.fingerprint-actions .form-hint {
+  margin-right: auto;
+}
+
+.fingerprint-actions button {
+  min-height: 32px;
+  padding: 7px 11px;
+  border: 1px solid var(--dash-line);
+  border-radius: 999px;
+  color: var(--dash-muted);
+  background: var(--dash-card);
+}
+
+.fingerprint-actions button:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+}
+
+
+
+/* ==============================================================================
+   Flattened layout - no cards
+   ==============================================================================
+
+   The screen used to be three elevated white cards (22px radius + a 0 16px 40px shadow)
+   floating on a warm gradient, and every row inside them was a smaller card of its own
+   (16-18px radius, hairline border, its own shadow, and a -1px lift on hover). Three
+   nested levels of the same rounded box is what made a tool read as a dashboard of tiles.
+
+   This section removes the chrome instead of restyling it: surfaces become flush and are
+   separated by single hairlines, and rows inherit the panel surface rather than carrying
+   their own. No DOM changes - .account-card and .media-card keep their elements and their
+   classes, because scripts/smoke-gui-preview.mjs asserts >=12 visible account cards and
+   >=2 media cards. They simply stop being cards.
+
+   !important appears only where it has to beat an existing !important in the dash layer
+   above: the .app-shell background, .sidebar/.browser-panel border+background, the two
+   zeroed side-panel borders, and the statusbar fill. Everywhere else source order wins.
+
+   Deliberately untouched: .modal, .toolbar-menu, .tab-context-menu and the .video-notice
+   overlay. Those are floating layers over the app, where a radius and a shadow are what
+   says "this is above the page" - flattening them would cost legibility, not noise.
+   ============================================================================== */
+
+/* Flat page. --dash-bg / --dash-bg-warm existed only to feed that gradient. */
+html,
+body,
+#root {
+  background: var(--ui-bg);
+}
+
+.app-shell {
+  padding: 0;
+  gap: 0;
+  background: var(--ui-bg) !important;
+}
+
+.workspace {
+  gap: 0;
+}
+
+/* The window frame is the outer boundary now, so app chrome is flush to it and the rows of
+   the shell separate by hairlines instead of by the gaps the cards used to leave. */
+.topbar {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: var(--ui-surface) !important;
+  box-shadow: none;
+}
+
+.sidebar,
+.browser-panel {
+  border: 0 !important;
+  border-radius: 0;
+  background: var(--ui-surface) !important;
+  box-shadow: none;
+}
+
+/* The columns that used to be separated by gaps are separated by a rule. */
+.accounts-panel {
+  border-right: 1px solid var(--ui-border) !important;
+}
+
+.media-panel {
+  border-left: 1px solid var(--ui-border) !important;
+}
+
+.statusbar {
+  height: 30px;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: var(--ui-surface) !important;
+}
+
+/* --- account rows --------------------------------------------------------- */
+
+.account-card {
+  min-height: 0;
+  margin-bottom: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Hover tints the row in place; the lift that went with the shadow is gone with it. */
+.account-card:hover {
+  transform: none;
+  border-color: transparent;
+  background: var(--ui-surface-soft);
+  box-shadow: none;
+}
+
+/* Selection was a solid near-black fill with white text - by a wide margin the heaviest
+   thing on the screen, spent on a state that only means "this one is current". A tint plus
+   a left accent bar says the same thing at a fraction of the weight.
+
+   The two colour rules below are not cosmetic tidying: they exist because the dark fill
+   forced white text, which is unreadable once the fill is a pale blue. */
+.account-card.selected {
+  border-bottom-color: var(--ui-border);
+  background: var(--ui-primary-soft);
+  box-shadow: inset 3px 0 var(--ui-primary);
+}
+
+.account-card.selected .account-main strong {
+  color: var(--ui-text);
+}
+
+.account-card.selected .account-main small {
+  color: var(--ui-muted);
+}
+
+/* Vertical padding only: the rows are shorter now that they are not cards, so the 9px stays
+   and the horizontal 8px is the original value. */
+.account-main {
+  padding: 9px 8px;
+}
+
+/* The name never had a box of its own to sit in. `flex: 0 1 auto` will not grow, so every
+   spare pixel in the row was absorbed by the badge's `margin-left: auto`, and the name was
+   left with whatever was over once the dot, the gaps and the badge had taken theirs. Measured
+   on the fixture row: the name needs 86px and was being handed 85.17 - and `.account-main
+   strong` is `text-overflow: ellipsis`, so 0.83px of rounding is the difference between
+   "Dola 工作账号 1" and "Dola 工作账...".
+
+   Letting the span grow changes nothing visually (the badge still lands flush right, it just
+   stops being the thing that collects the slack) and gives the name ~15px of headroom
+   instead of 0.28px. This is why the row's horizontal padding is not the lever to reach for
+   here - it only ever moved the knife edge. */
+.account-main > span:last-child {
+  flex: 1 1 auto;
+}
+
+/* --- media rows ----------------------------------------------------------- */
+
+.media-card {
+  margin-bottom: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.media-card:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.media-list {
+  padding: 0 12px;
+}
+
+/* The preview is an image, not a card: a small radius reads as an image edge, where the
+   18px the container used to carry read as a tile. */
+.media-preview {
+  border-radius: 8px;
+}
+
+/* --- surfaces inside the help dialog -------------------------------------- */
+
+/* Chrome only - the padding stays as declared. Measured: the three .help-cards are a
+   side-by-side grid (x = 279.7 / 576.8 / 873.9, each 288.1 wide, 9px apart), not a vertical
+   stack, so a border-bottom or a `padding: 12px 0` would draw a rule under a horizontal row
+   and push the text against its neighbours. */
+.help-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Motion here is purely decorative - every transition is a hover/press affordance, so
+   the reduced-motion preference can switch them all off without losing information.
+   Declared last so it outranks the base transition declarations at equal specificity;
+   this replaces the one-off .capture-switch fallback it supersedes. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

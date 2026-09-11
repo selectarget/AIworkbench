@@ -6,6 +6,15 @@ import type { AppSettings } from '../src/shared/contracts';
 import { SettingsService } from '../src/main/settings';
 
 describe('settings service', () => {
+  it('migrates an old dark theme once while preserving directories and later preferences', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'workbench-theme-'));
+    const file = join(dir, 'settings.json');
+    writeFileSync(file, JSON.stringify({ theme: 'dark', downloadDir: dir, videoDownloadDir: join(dir, 'videos') }));
+    const service = new SettingsService(file, dir);
+    expect(service.get()).toMatchObject({ theme: 'light', lightThemeMigrated: true, downloadDir: dir, videoDownloadDir: join(dir, 'videos'), parseImages: false });
+    service.update({ theme: 'dark', parseImages: true });
+    expect(new SettingsService(file, dir).get()).toMatchObject({ theme: 'light', lightThemeMigrated: true, parseImages: true });
+  });
   it('migrates an empty legacy download directory to the portable default', () => {
     const dir = mkdtempSync(join(tmpdir(), 'workbench-settings-')); const file = join(dir, 'settings.json');
     writeFileSync(file, JSON.stringify({ downloadDir: '', openTabs: [] }));

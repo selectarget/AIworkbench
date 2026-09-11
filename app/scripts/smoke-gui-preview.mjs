@@ -130,12 +130,25 @@ const resources = [
     source: 'Dola fixture',
     accountId: accounts[1].id,
     capturedAt: now
+  },
+  {
+    id: 'gui-resource-3',
+    type: 'video',
+    url: 'https://cdn.example.com/workbench-video.mp4?lr=video_gen_no_watermark',
+    previewUrl: svgPreview,
+    previewThumbUrl: svgPreview,
+    title: 'V5.2 视频通道预览',
+    source: 'doubao_download_info',
+    accountId: accounts[0].id,
+    capturedAt: now,
+    confirmedNoWatermark: true,
+    qualityEvidence: 'platform-api'
   }
 ];
 
 const settings = {
   schemaVersion: 2,
-  theme: 'dark',
+  theme: 'light',
   downloadDir: 'D:\\AI-Workbench\\Downloads',
   videoDownloadDir: 'D:\\AI-Workbench\\Videos',
   useAccountDownloadSubfolders: true,
@@ -144,6 +157,8 @@ const settings = {
   legacyV44MediaFolders: false,
   videoFilenamePrefix: '',
   captureMode: 'all',
+  parseImages: false,
+  lightThemeMigrated: true,
   downloadConcurrency: 2,
   downloadRetryCount: 2,
   experimentalResponsePatchEnabled: true,
@@ -235,7 +250,7 @@ async function main() {
     };
     const browserApi = {
       open: () => ok({}), openMany: (ids) => ok({ succeeded: ids, failed: [] }), close: () => ok(undefined), closeMany: () => ok(undefined),
-      activate: () => ok(undefined), setLayout: () => ok(undefined), navigate: () => ok(undefined), back: () => ok(undefined), forward: () => ok(undefined),
+      activate: () => ok(undefined), setLayout: (layout) => { window.__fixtureLayout = layout; return ok(undefined); }, navigate: () => ok(undefined), back: () => ok(undefined), forward: () => ok(undefined),
       refresh: () => ok(undefined), refreshMany: () => ok(undefined), setZoom: () => ok(1), reconfigure: () => ok(undefined), applyProxy: () => ok(undefined),
       clearSession: () => ok(undefined), onNavigation: no, onVideoGenerated: no, openBatchWorkspace: () => ok(undefined), closeBatchWorkspace: () => ok(undefined),
       externalLoginStart: () => ok(undefined), externalLoginSync: () => ok({ cookies: 0 }), externalLoginClose: () => ok(undefined), externalLoginStatus: () => ok({ running: false }), externalLoginState: () => ok({ running: false, loggedIn: false, cookieCount: 0, message: 'fixture' }),
@@ -247,7 +262,7 @@ async function main() {
       list: () => ok(state.resources), tasks: () => ok(state.tasks), clear: () => ok(undefined), cancel: () => ok(undefined), retry: () => ok(undefined),
       download: () => ok({}), downloadMany: () => ok([]), selectCandidate: (resourceId, url) => { const resource = state.resources.find((item) => item.id === resourceId); if (!resource) return ok(null); const candidates = [resource.url, resource.backupUrl, ...(resource.alternateUrls || [])].filter(Boolean); const selectedIndex = candidates.indexOf(url); if (selectedIndex < 0) return ok(resource); const remaining = candidates.filter((candidate) => candidate !== url); return ok({ ...resource, url, backupUrl: remaining[0] || undefined, alternateUrls: remaining.slice(1) }); }, convertForPreview: () => ok({ url: '', cached: false }), toolStatus: () => ok({ available: true, path: 'fixture/ffmpeg', version: '6.0', packaged: false, message: 'GUI fixture FFmpeg' }), onUpdated: no, onTasks: (listener) => { taskListeners.push(listener); return () => { const index = taskListeners.indexOf(listener); if (index >= 0) taskListeners.splice(index, 1); }; }, onVideoGenerated: (listener) => { videoGeneratedListeners.push(listener); return () => { const index = videoGeneratedListeners.indexOf(listener); if (index >= 0) videoGeneratedListeners.splice(index, 1); }; }
     };
-    const settingsApi = { get: () => ok(state.settings), update: (patch) => { Object.assign(state.settings, patch); return ok(state.settings); } };
+    const settingsApi = { get: () => ok(structuredClone(state.settings)), update: (patch) => { Object.assign(state.settings, patch); return ok(structuredClone(state.settings)); } };
     const proxyApi = { runtimeStatus: () => ok(state.runtimeState), onState: no, importSubscription: () => ok({ nodes: [], configJson: '', skippedNodeCount: 0 }), refreshSubscription: () => ok({ nodes: [], configJson: '', skippedNodeCount: 0 }), selectNode: () => ok(state.runtimeState), testNode: () => ok({ message: 'fixture', latencyMs: 1, ip: '' }), testAllNodes: () => ok({ message: 'fixture', nodes: [] }), stopRuntime: () => ok(undefined) };
     const fingerprintApi = { regenerate: () => ok(state.accounts[0].fingerprint), reset: () => ok(state.accounts[0].fingerprint) };
     let libraryListCalls = 0;
@@ -268,8 +283,9 @@ async function main() {
     show: false,
     width: previewWidth,
     height: previewHeight,
-    backgroundColor: '#080d1a',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+    backgroundColor: '#f3f4f7',
+    ...(process.platform === 'win32' ? { titleBarStyle: 'hidden', titleBarOverlay: { color: '#ffffff', height: 36 } } : {}),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false }
   });
   await withTimeout(window.loadURL('about:blank'), 'GUI bootstrap page');
   console.log('gui smoke: bootstrap loaded');
@@ -304,8 +320,26 @@ async function main() {
       const dialog = document.querySelector('.modal[role="dialog"]');
       const labelledBy = dialog?.getAttribute('aria-labelledby');
       if (!dialog || dialog.getAttribute('aria-modal') !== 'true' || !labelledBy || !dialog.querySelector('#' + CSS.escape(labelledBy))) throw new Error(buttonLabel + ' modal accessibility attributes missing');
+      await waitFor(() => window.__fixtureLayout?.occluded === true, 'modal did not hide native views');
       const text = document.querySelector('.modal')?.textContent || '';
       if (!text.includes(expectedText)) throw new Error(buttonLabel + ' modal missing ' + expectedText);
+      if (buttonLabel === '设置') {
+        const legacyRows = [...document.querySelectorAll('.settings-list > label:not(.setting-row)')];
+        const darkRows = legacyRows.filter((node) => {
+          const color = getComputedStyle(node).backgroundColor.replace(/\s/g, '');
+          return color === 'rgb(11,17,32)' || color === 'rgba(11,17,32,1)';
+        });
+        if (!legacyRows.length || darkRows.length) throw new Error('settings legacy rows are not on the light surface: ' + JSON.stringify({ rows: legacyRows.length, darkRows: darkRows.length }));
+        const navLabels = [...document.querySelectorAll('.settings-nav button')].map((node) => node.textContent?.trim()).filter(Boolean);
+        if (!navLabels.includes('下载') || !navLabels.includes('浏览器') || !navLabels.includes('插件')) throw new Error('settings section navigation did not render: ' + JSON.stringify(navLabels));
+        const navRects = [...document.querySelectorAll('.settings-nav button')].map((node) => node.getBoundingClientRect());
+        const maxNavGap = navRects.slice(1).reduce((max, rect, index) => Math.max(max, rect.top - navRects[index].bottom), 0);
+        if (maxNavGap > 18) throw new Error('settings navigation rows are stretched: ' + JSON.stringify({ maxNavGap, navRects }));
+        if ((document.querySelector('.modal-body')?.scrollTop ?? 0) > 4) throw new Error('settings modal did not open at the top');
+        const pluginNav = [...document.querySelectorAll('.settings-nav button')].find((node) => node.textContent?.trim() === '插件');
+        pluginNav?.click();
+        await waitFor(() => pluginNav?.classList.contains('active') === true, 'settings section navigation did not activate');
+      }
       await closeModal();
       return buttonLabel;
     };
@@ -318,6 +352,7 @@ async function main() {
       await openTools();
       clickExact(label);
       await waitFor(() => Boolean(document.querySelector('.modal h2')), label + ' modal did not open');
+      await waitFor(() => window.__fixtureLayout?.occluded === true, 'modal did not hide native views');
       const text = document.querySelector('.modal')?.textContent || '';
       if (!text.includes(expectedText)) throw new Error(label + ' modal missing ' + expectedText);
       await closeModal();
@@ -367,11 +402,46 @@ async function main() {
     };
     for (let attempt = 0; attempt < 80 && !document.querySelector('.app-shell'); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
     if (!document.querySelector('.app-shell')) throw new Error('app shell did not render');
+    if (document.documentElement.dataset.platform === 'windows') {
+      const topbarRegion = getComputedStyle(document.querySelector('.topbar')).webkitAppRegion;
+      const actionsRegion = getComputedStyle(document.querySelector('.top-actions')).webkitAppRegion;
+      const buttonRegion = getComputedStyle(document.querySelector('.top-actions button')).webkitAppRegion;
+      if (topbarRegion !== 'drag' || actionsRegion !== 'drag' || buttonRegion !== 'no-drag') throw new Error('window drag regions are incomplete: ' + JSON.stringify({ topbarRegion, actionsRegion, buttonRegion }));
+    }
     for (let attempt = 0; attempt < 80 && !document.querySelector('.account-card.selected'); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
     if (!document.querySelector('.account-card.selected')) throw new Error('fixture account did not become active');
+    const activeCard = document.querySelector('.account-card.selected');
+    activeCard?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await waitFor(() => Boolean(document.querySelector('.fingerprint-box')), 'fingerprint editor did not open');
+    const fingerprintEditor = {
+      sections: document.querySelectorAll('.fingerprint-section').length,
+      summary: Boolean(document.querySelector('.fingerprint-summary')),
+      health: Boolean(document.querySelector('.fingerprint-health')),
+      warnings: Boolean(document.querySelector('.fingerprint-warnings, .fingerprint-ok'))
+    };
+    if (fingerprintEditor.sections !== 3 || !fingerprintEditor.summary || !fingerprintEditor.health || !fingerprintEditor.warnings) throw new Error('fingerprint editor hierarchy incomplete: ' + JSON.stringify(fingerprintEditor));
+    await closeModal();
     window.__fixtureEmitVideoGenerated({ accountId: ${JSON.stringify(activeAccount.id)}, key: 'gui-video-notice', title: 'GUI 生成视频' });
     await waitFor(() => Boolean(document.querySelector('.account-video-notice')) && Boolean(document.querySelector('.tab-video-dot')), 'video notice badge did not render');
     if (!document.querySelector('.account-video-notice')?.textContent?.includes('新视频')) throw new Error('account video notice badge text missing');
+    const tabList = document.querySelector('[role="tablist"]');
+    if (!tabList || document.querySelectorAll('[role="tab"]').length < 1) throw new Error('account tabs did not render');
+    const accountButtons = document.querySelectorAll('.account-main');
+    if (accountButtons.length > 1) {
+      (accountButtons[1]).click();
+      await waitFor(() => document.querySelectorAll('[role="tab"]').length >= 2, 'opening a second account did not create a tab');
+      document.querySelector('[role="tab"]')?.click();
+      await waitFor(() => document.querySelector('.tab.active')?.textContent?.includes('豆包'), 'switching back to the first tab failed');
+    }
+    const firstTab = document.querySelector('[role="tab"]');
+    firstTab?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 100, clientY: 100 }));
+    await waitFor(() => Boolean(document.querySelector('.tab-context-menu')), 'tab context menu did not open');
+    const tabContextItems = [...document.querySelectorAll('.tab-context-menu [role="menuitem"]')].map((node) => node.textContent?.trim()).filter(Boolean);
+    if (!tabContextItems.includes('关闭其他标签') || !tabContextItems.includes('关闭此标签')) throw new Error('tab context actions incomplete: ' + JSON.stringify(tabContextItems));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await waitFor(() => !document.querySelector('.tab-context-menu'), 'Escape did not close tab context menu');
+    const channelButtons = document.querySelectorAll('.media-channel');
+    if (channelButtons.length < 3 || !document.querySelector('.media-download-main') || !document.querySelector('.media-preview-action')) throw new Error('V5.2 download actions did not render');
     const candidateButton = [...document.querySelectorAll('.media-card button')].find((node) => node.textContent?.trim() === '候选地址 3');
     if (!candidateButton) throw new Error('media candidate selector did not render');
     candidateButton.click();
@@ -394,12 +464,8 @@ async function main() {
     if (!authorShop) throw new Error('author shop menu item did not render');
     authorShop.click();
     await waitFor(() => document.querySelector('.statusbar')?.textContent?.includes('作者店铺'), 'author shop action did not complete');
-    const theme = document.querySelector('.theme-toggle');
-    theme?.click();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    if (document.querySelector('.theme-toggle')) throw new Error('theme toggle should not reintroduce a dark palette');
     const lightTheme = document.documentElement.dataset.theme;
-    theme?.click();
-    await new Promise((resolve) => setTimeout(resolve, 80));
     const modalChecks = [];
     modalChecks.push(await checkTopModal('设置', '旧版临时缓存'));
     const checkLibraryAutoRefresh = async () => {
@@ -422,7 +488,13 @@ async function main() {
     };
     const libraryRefresh = await checkLibraryAutoRefresh();
     modalChecks.push('素材库');
-    modalChecks.push(await checkTopModal('登录辅助', '打开登录浏览器'));
+    const imageSwitch = document.querySelector('[role="switch"][aria-label="图片解析"]');
+    if (!imageSwitch || imageSwitch.getAttribute('aria-checked') !== 'false') throw new Error('image parsing must default off');
+    imageSwitch.click();
+    await waitFor(() => imageSwitch.getAttribute('aria-checked') === 'true', 'image parsing did not enable');
+    imageSwitch.click();
+    await waitFor(() => imageSwitch.getAttribute('aria-checked') === 'false', 'image parsing did not disable');
+    modalChecks.push(await checkToolModal('登录辅助', '打开登录浏览器'));
     const dolaTaskChecks = await checkDolaTaskModal();
     modalChecks.push('Dola 批量登录');
     modalChecks.push(await checkToolModal('使用指南与快捷键', '从账号到成片'));
@@ -437,13 +509,14 @@ async function main() {
     const toolbarMenuItems = [...document.querySelectorAll('.toolbar-menu [role="menuitem"]')].map((node) => node.textContent?.trim()).filter(Boolean);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await waitFor(() => !document.querySelector('.toolbar-menu'), 'Escape did not close toolbar menu');
+    await waitFor(() => window.__fixtureLayout?.occluded === false, 'native views did not restore');
     const accountCardsVisible = [...document.querySelectorAll('.account-card')].filter((node) => { const rect = node.getBoundingClientRect(); return getComputedStyle(node).display !== 'none' && rect.width > 0 && rect.height > 0; }).length;
     const workspace = document.querySelector('.workspace');
     const layoutSnapshot = workspace ? { display: getComputedStyle(workspace).display, columns: getComputedStyle(workspace).gridTemplateColumns, rows: getComputedStyle(workspace).gridTemplateRows, clientWidth: workspace.clientWidth, clientHeight: workspace.clientHeight, scrollWidth: workspace.scrollWidth, scrollHeight: workspace.scrollHeight } : null;
     const panelRects = Object.fromEntries(['.accounts-panel', '.browser-panel', '.media-panel'].map((selector) => { const rect = document.querySelector(selector)?.getBoundingClientRect(); return [selector, rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null]; }));
     return {
       title: document.title,
-      themeRestored: document.documentElement.dataset.theme === 'dark',
+      themeRestored: document.documentElement.dataset.theme === 'light',
       lightTheme,
       accountCards: document.querySelectorAll('.account-card').length,
       accountCardsVisible,
@@ -452,6 +525,7 @@ async function main() {
       toolbarMenuItems,
       modalChecks,
       libraryRefresh,
+      fingerprintEditor,
       dolaTaskChecks,
       nativeDownloadNotice,
       menuRect: menuRect ? { width: menuRect.width, height: menuRect.height, left: menuRect.left, top: menuRect.top } : null,
@@ -472,14 +546,15 @@ async function main() {
    if (!result.toolbarMenuItems.includes('豆包 15s 设置') || !result.toolbarMenuItems.includes('豆包 30s 设置') || !result.toolbarMenuItems.includes('使用指南与快捷键')) throw new Error(`duration/help tools missing: ${JSON.stringify(result.toolbarMenuItems)}`);
   if (!result.nativeDownloadNotice.includes('报告.pdf')) throw new Error(`native download notice missing: ${result.nativeDownloadNotice}`);
   if (!result.libraryRefresh?.native || !result.libraryRefresh?.mediaTask || !result.libraryRefresh?.closed) throw new Error(`library refresh lifecycle incomplete: ${JSON.stringify(result.libraryRefresh)}`);
+  if (result.fingerprintEditor?.sections !== 3 || !result.fingerprintEditor?.summary || !result.fingerprintEditor?.health) throw new Error(`fingerprint editor checks incomplete: ${JSON.stringify(result.fingerprintEditor)}`);
   if (!result.toolbarMenuItems.includes('作者店铺')) throw new Error(`author shop tool missing: ${JSON.stringify(result.toolbarMenuItems)}`);
    if (result.modalChecks.length !== 9) throw new Error(`expected all primary GUI modals to render, received ${JSON.stringify(result.modalChecks)}`);
    if (!result.menuRect || result.menuRect.width < 250 || result.menuRect.height < 100) throw new Error(`toolbar menu has no visible layout: ${JSON.stringify(result.menuRect)}`);
    if (result.menuOpen) throw new Error('Escape did not close toolbar menu');
    if (result.modalOpen) throw new Error(`a modal remained open after GUI smoke: ${result.modalTitle}`);
-  if (!result.themeRestored || result.lightTheme !== 'light') throw new Error(`theme toggle did not round-trip: ${JSON.stringify(result)}`);
+  if (!result.themeRestored || result.lightTheme !== 'light') throw new Error(`white theme did not remain enabled: ${JSON.stringify(result)}`);
 
-  await new Promise((resolve) => setTimeout(resolve, 180));
+  await new Promise((resolve) => setTimeout(resolve, 500));
   const image = await window.webContents.capturePage();
   writeFileSync(previewPath, image.toPNG());
   console.log(`gui preview ok: ${JSON.stringify(result)}`);

@@ -204,7 +204,8 @@ export type DolaResourceReference = z.infer<typeof dolaResourceReferenceSchema>;
 
 export const settingsSchema = z.object({
   schemaVersion: z.number().int().positive().default(2),
-  theme: z.enum(['light', 'dark']).default('dark'),
+  theme: z.enum(['light', 'dark']).default('light'),
+  lightThemeMigrated: z.boolean().default(false),
   downloadDir: z.string().default(''),
   videoDownloadDir: z.string().default(''),
   useAccountDownloadSubfolders: z.boolean().default(true),

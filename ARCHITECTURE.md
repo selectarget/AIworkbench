@@ -769,7 +769,7 @@ macOS 签名和公证需要在 macOS 环境完成；electron-builder 也明确�
 
 本轮 `smoke:all` 实际包含并通过 15 个 Electron/站点 smoke：旧版 API 表面审计、账号隔离、跨进程 Session 重启、文档脚本、指纹运行时、平台页面适配、站点适配器夹具、任务流程夹具、结构化存储、批量工作区、视频提醒、sing-box、人脸网格、GUI renderer 预览和公开站点入口；另有 Windows 目录包 `smoke:packaged`。平台页面夹具验证 Kimi/Dola 通用捕获，站点适配器夹具验证 Dola 30 秒请求、豆包创作扫描、Higgsfield 课程跳转和即梦原图按钮桥接，任务流程夹具验证 Dola 15/30 秒页面操作、豆包 15 秒提示词发送和豆包账号级 15/30 秒页面设置。各 Electron smoke 的异常都会以非零退出码传递，避免总检查误报成功。
 
-`smoke:gui` 另外使用临时用户目录和模拟数据，在真实 Electron renderer 中渲染 18 个账号、素材卡片和三栏工作区，点击“更多工具”，依次挂载设置、素材库、登录辅助、Dola/Higgsfield 批量登录、人脸网格、V4.4 迁移和诊断 8 个核心面板，再切换深浅主题后截图；该检查用于 GUI 布局/交互骨架回归，不把模拟数据当作真实站点验收。
+`smoke:gui` 另外使用临时用户目录和模拟数据，在真实 Electron renderer 中渲染 18 个账号、素材卡片和三栏工作区，点击“更多工具”，依次挂载设置、素材库、登录辅助、Dola/Higgsfield 批量登录、人脸网格、V4.4 迁移和诊断 8 个核心面板并截图；该检查用于 GUI 布局/交互骨架回归，不把模拟数据当作真实站点验收。
 
 - IPC 安全。
 - Renderer 连接状态可视化：直连、订阅代理运行中、启动中和失败阻断状态映射。
@@ -832,7 +832,7 @@ macOS 签名和公证需要在 macOS 环境完成；electron-builder 也明确�
 
 新增的 `npm run smoke:real-sites -- --platform <id> [--account-id <id>] [--user-data <目录>] [--show]` 是显式 opt-in 的真实站点验收入口。它复用生产适配器脚本、远程媒体 preload、内置扩展和 `persist:account_<id>` Session；不传 `--user-data` 时使用临时目录并在退出时清理，传入已有工作台 Session 根目录时只读取页面状态和媒体消息统计，不输出 Cookie、密码或签名 URL。`--show` 允许测试人员手动完成登录、验证码、2FA 或 Passkey，`--expect-capture` 可把等待期间无媒体消息视为失败。配套的 `npm run smoke:real-sites:public` 会自动构建并在临时目录依次检查 10 个公开入口；本轮已全部实际通过，另有 `custom + example.com` 通过。它仍不能替代真实登录、任务提交、下载和 macOS 真机验收。
 
-2026-08-28 追加回归中，`smoke:all` 实际包含并通过 15 个 Electron/站点 smoke（旧版 API 表面审计、账号隔离、跨进程 Session 重启、文档脚本、生成式指纹运行时、结构化存储、批量工作区、视频提醒、sing-box、人脸网格、GUI renderer 预览、公开站点入口、站点适配器夹具、Dola/豆包任务流程夹具等）以及 Windows `smoke:packaged`；另用 opt-in `smoke:real-sites` 在临时 Session 对 10 个公开平台入口逐个通过页面加载、适配器注入和媒体消息统计。视频提醒 fixture 还验证逐视频浮层到 `remote:media` 的真实消息路径，指纹 fixture 还验证生产构建脚本在页面首段前注入并生效，站点适配器夹具还验证 Dola 30 秒请求、豆包创作扫描、Higgsfield 课程跳转和即梦原图按钮桥接，任务流程夹具还验证 Dola 15/30 秒页面操作和豆包 15 秒提示词发送。公开站点结果仅证明入口可达、脚本可注入和部分公开媒体可捕获，不能证明登录、捕获、下载或任务权限。打包 smoke 实际启动目录包并保持 6 秒后清理进程；macOS runner 会对 `.app` 使用同一脚本。新增 `verify:mac-release` 只在 macOS 执行：读取 `Info.plist`，检查 Bundle identifier、图标、主程序执行权限、目标 Mach-O 架构、随包 sing-box/FFmpeg 的执行权限与 SHA-256，并以只读方式挂载 DMG 后复核其中的 `.app`；传入 `--signed` 时还会执行 `codesign --verify` 和 `spctl --assess`。另增加了同一账号并发打开请求合并及初始化失败清理，避免重复创建或残留失效的 `WebContentsView`；内置豆包扩展的版本/激活门控静态回归也已通过。顶栏深浅主题一键切换已在打包 GUI 中实际切换浅色后恢复深色，窄栏批量操作改为可读网格，素材无地址时不再渲染空图片元素；实验响应补丁开关现在会即时重建需要该拦截的已打开账号；普通/视频下载目录分离已在单测和打包版设置 GUI 中回归。
+2026-08-28 追加回归中，`smoke:all` 实际包含并通过 15 个 Electron/站点 smoke（旧版 API 表面审计、账号隔离、跨进程 Session 重启、文档脚本、生成式指纹运行时、结构化存储、批量工作区、视频提醒、sing-box、人脸网格、GUI renderer 预览、公开站点入口、站点适配器夹具、Dola/豆包任务流程夹具等）以及 Windows `smoke:packaged`；另用 opt-in `smoke:real-sites` 在临时 Session 对 10 个公开平台入口逐个通过页面加载、适配器注入和媒体消息统计。视频提醒 fixture 还验证逐视频浮层到 `remote:media` 的真实消息路径，指纹 fixture 还验证生产构建脚本在页面首段前注入并生效，站点适配器夹具还验证 Dola 30 秒请求、豆包创作扫描、Higgsfield 课程跳转和即梦原图按钮桥接，任务流程夹具还验证 Dola 15/30 秒页面操作和豆包 15 秒提示词发送。公开站点结果仅证明入口可达、脚本可注入和部分公开媒体可捕获，不能证明登录、捕获、下载或任务权限。打包 smoke 实际启动目录包并保持 6 秒后清理进程；macOS runner 会对 `.app` 使用同一脚本。新增 `verify:mac-release` 只在 macOS 执行：读取 `Info.plist`，检查 Bundle identifier、图标、主程序执行权限、目标 Mach-O 架构、随包 sing-box/FFmpeg 的执行权限与 SHA-256，并以只读方式挂载 DMG 后复核其中的 `.app`；传入 `--signed` 时还会执行 `codesign --verify` 和 `spctl --assess`。另增加了同一账号并发打开请求合并及初始化失败清理，避免重复创建或残留失效的 `WebContentsView`；内置豆包扩展的版本/激活门控静态回归也已通过。顶栏主题已固定为亮色（不再提供深浅切换），窄栏批量操作改为可读网格，素材无地址时不再渲染空图片元素；实验响应补丁开关现在会即时重建需要该拦截的已打开账号；普通/视频下载目录分离已在单测和打包版设置 GUI 中回归。
 
 ### 14.2 必须补充的端到端测试
 

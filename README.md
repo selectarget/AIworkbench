@@ -8,6 +8,8 @@
 
 最近一次本机回归基线：36 个测试文件、267 个单元/集成测试通过；新增覆盖 Dola 备用解析按账号 Session 使用平台匹配的 User-Agent（并去除 Electron 标识）、紧凑 SSE、NDJSON、有界嵌套 JSON 响应中的媒体资源解析、素材候选地址标注/选择，以及 HTTP 200 错误页和流中断后的候选回退/失败记录。插件导入回归还覆盖 CRX2/CRX3 头部剥离后加载 Manifest V3；远程媒体、视频提醒和 Dola 令牌三条事件链现在统一尊重平台适配器禁用设置。下载队列还会登记程序化下载 URL，并在旧版兼容窗口内取消同 URL 的重复 Chromium 原生下载；已打开的素材库会在普通文件或媒体任务完成后自动防抖刷新。通用捕获还覆盖响应式 `srcset`、`<picture><source>`、受限 CSS 背景图和媒体类型优先级；sandboxed remote preload 也有独立兜底 smoke，验证页面脚本缺席时仍能安全捕获可见图片、响应式来源、CSS 背景和 `<video><source>`，并拒绝空地址回退为当前页面 URL；GUI 预览验证了普通文件下载完成通知、候选地址详情弹窗、失败候选状态，以及账号卡片/标签页“新视频”提醒，并补回旧 V4.4 的固定 HTTPS“作者店铺”入口。旧版 API 表面审计 59 项（44 项已映射、12 项内部实现、3 项明确移除）；外部登录新增平台无关的目标站点 Cookie 登录态轮询，Dola/Higgsfield 在人工完成验证码、2FA 或 Passkey 后可自动检测并同步；旧版代理订阅转换新增 VMess WebSocket/gRPC/HTTP-H2、TLS SNI/证书校验/ALPN/客户端指纹，以及 hysteria2 带宽和混淆参数保留；同时限制订阅大小并拒绝不严格的 Base64 输入。媒体资源入口（包括 Dola 页面桥）现在还共享安全 URL 归一化，兼容旧版 JSON/HTML 中的转义斜杠、Unicode 转义、外层引号和 HTML 实体，并在主进程去重与下载前统一校验协议。Windows x64 目录包和 portable 包已完成本机启动与原生资源审计；portable 最新大小为 195,931,887 字节，SHA-256 为 `C825BA3EB3DA72B561B2368555272CBEBF506A4BF0FA8FECC24E4C8D0832D86F`。10 个真实公开平台入口也已在 Electron `WebContentsView` 中逐一通过公开页面导航/适配器注入检查，但不代表真实登录、任务、下载权限或 macOS 已完成。
 
+本轮界面与下载对齐回归：36 个测试文件、273/273 项通过；另有 1080/1440 GUI smoke 和原生 WebContentsView 遮挡 smoke。
+
 ## 目录
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md)：全面技术架构分析、数据隔离说明、V4.4 对照、跨平台边界、测试策略和迁移路线图。

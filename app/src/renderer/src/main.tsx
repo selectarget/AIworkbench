@@ -1,10 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
-import './styles.css';
-import './layout-fixes.css';
+import './workbench.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
+document.documentElement.dataset.platform = navigator.platform.startsWith('Win') ? 'windows' : 'other';
+document.documentElement.dataset.theme = 'light';
 
 if (!window.workbench) {
   root.render(
