@@ -40,27 +40,47 @@ export function createFingerprintProfile(platform: PlatformId, seed = randomByte
   const dataPlatform = mac ? 'macOS' : 'Windows';
   const major = chromeVersion().split('.')[0] || '128';
   const hardwareConcurrency = pick(bytes, 0, [4, 8, 12, 16] as const);
-  const deviceMemory = pick(bytes, 1, [4, 8, 16] as const);
-  const sizes: readonly (readonly [number, number, number])[] = mac ? [[1440, 900, 2], [1728, 1117, 2], [2560, 1600, 2]] : [[1920, 1080, 1], [2560, 1440, 1.25], [1536, 864, 1]];
+  // 16 is not in Chrome's set. navigator.deviceMemory is privacy-rounded to one of
+  // 0.25/0.5/1/2/4/8 and never reports anything else, so a profile drawn from [4,8,16] carried a
+  // value the browser cannot produce about a third of the time (1343 of 4000 sampled seeds).
+  const deviceMemory = pick(bytes, 1, [4, 8] as const);
+  // screen.width/height are CSS pixels, so the pair has to be consistent with the DPR beside it -
+  // [2560,1440,1.25] describes a 3200x1800 panel rather than the 2560x1440 one it was meant to be,
+  // and [2560,1600,2] on macOS describes a 5120x3200 display that does not exist. These are real
+  // desktop configurations, expressed the way the API reports them.
+  const sizes: readonly (readonly [number, number, number])[] = mac
+    ? [[1440, 900, 2], [1512, 982, 2], [1728, 1117, 2]]
+    : [[1920, 1080, 1], [2048, 1152, 1.25], [1536, 864, 1]];
   const size = pick(bytes, 2, sizes);
   const renderer = mac
     ? pick(bytes, 3, ['ANGLE (Apple, Apple M1, OpenGL 4.1)', 'ANGLE (Apple, Apple M2, OpenGL 4.1)', 'ANGLE (Apple, Apple GPU, OpenGL 4.1)'] as const)
     : pick(bytes, 3, ['ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)', 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', 'ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'] as const);
-  const vendor = mac ? 'Google Inc.' : 'Google Inc.';
+  // navigator.vendor and the WebGL unmasked vendor are different strings in Chrome, and the WebGL
+  // one carries the ANGLE backend in parentheses - `Google Inc. (Intel)`, `Google Inc. (NVIDIA)`.
+  // One variable used to feed both, so every profile reported a bare `Google Inc.` next to a
+  // renderer that names its backend: a pair no real Chrome emits, and the first thing a WebGL
+  // fingerprint compares. chromeVendor keeps navigator.vendor exact; webGlVendor is derived.
+  const chromeVendor = 'Google Inc.';
+  const backend = /^ANGLE \(([^,]+),/.exec(renderer)?.[1] ?? (mac ? 'Apple' : 'Intel');
+  const webGlVendor = `${chromeVendor} (${backend})`;
   const arch = mac ? (process.arch === 'arm64' ? 'arm' : 'x86') : 'x86';
   const platformVersion = mac ? '10.15.7' : '15.0.0';
   return fingerprintSchema.parse({
-    enabled: false,
+    // Default on. Must stay in step with the fingerprintSchema.default in src/shared/contracts.ts:
+    // the new-account form sends its own `enabled`, and the create path does
+    // `{ ...createFingerprintProfile(...), enabled: input.fingerprint.enabled }`, so a mismatch
+    // would let the form's value silently win over the generated one.
+    enabled: true,
     seed,
     runtimePlatform,
     userAgent: ua,
     platform: browserPlatform,
-    vendor,
+    vendor: chromeVendor,
     languages: ['zh-CN', 'zh', 'en-US', 'en'],
     hardwareConcurrency,
     deviceMemory,
     maxTouchPoints: 0,
-    webGlVendor: vendor,
+    webGlVendor,
     webGlRenderer: renderer,
     userAgentDataBrands: `"Not/A)Brand";v="8", "Chromium";v="${major}"`,
     userAgentDataFullVersionList: `"Not/A)Brand";v="8.0.0.0", "Chromium";v="${chromeVersion()}"`,
@@ -148,6 +168,12 @@ export function buildFingerprintScript(profile: FingerprintProfile): string {
     define(nav, 'hardwareConcurrency', p.hardwareConcurrency);
     define(nav, 'deviceMemory', p.deviceMemory);
     define(nav, 'maxTouchPoints', p.maxTouchPoints);
+    // Defined on the instance, NOT on Window.prototype, even though every other hook here targets a
+    // prototype and that would look more consistent. Measured: this Chromium installs
+    // devicePixelRatio as an own accessor on the window object (a clean iframe reports
+    // getOwnPropertyNames(win).includes('devicePixelRatio') === true and undefined on
+    // Window.prototype), so a prototype definition is shadowed by the engine's own property and the
+    // real value leaks through - verified, it reported the host's 1.1979 instead of the profile's.
     define(globalThis, 'devicePixelRatio', p.deviceScaleFactor);
     const brandList = String(p.userAgentDataBrands || '').split(/,\\s*/).map(item => { const match = item.match(/^"?(.+?)"?;v="?([^"\\s]+)"?$/); return match ? { brand: match[1], version: match[2] } : null; }).filter(Boolean);
     const fullVersion = String(p.userAgentDataFullVersionList || '').match(/Chromium";v="([^"]+)/)?.[1] || '';
@@ -169,19 +195,94 @@ export function buildFingerprintScript(profile: FingerprintProfile): string {
       }
     };
     define(nav, 'userAgentData', Object.freeze(uaData));
-    define(Screen.prototype, 'width', p.screenWidth); define(Screen.prototype, 'height', p.screenHeight); define(Screen.prototype, 'availWidth', p.screenWidth); define(Screen.prototype, 'availHeight', p.screenHeight);
+    // availHeight is the work area, not the screen: reporting it equal to height claims a desktop
+    // with no taskbar (Windows) or no menu bar (macOS), which no real machine does.
+    const chromeInset = p.userAgentDataPlatform === 'macOS' ? 25 : 40;
+    define(Screen.prototype, 'width', p.screenWidth); define(Screen.prototype, 'height', p.screenHeight); define(Screen.prototype, 'availWidth', p.screenWidth); define(Screen.prototype, 'availHeight', Math.max(0, p.screenHeight - chromeInset));
     const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
     WebGLRenderingContext.prototype.getParameter = function(parameter) { if (parameter === 37445) return p.webGlVendor; if (parameter === 37446) return p.webGlRenderer; return originalGetParameter.call(this, parameter); };
     if (globalThis.WebGL2RenderingContext) { const originalGetParameter2 = WebGL2RenderingContext.prototype.getParameter; WebGL2RenderingContext.prototype.getParameter = function(parameter) { if (parameter === 37445) return p.webGlVendor; if (parameter === 37446) return p.webGlRenderer; return originalGetParameter2.call(this, parameter); }; }
-    const bytes = new TextEncoder().encode(String(p.seed)); let state = bytes.reduce((sum, item) => (sum * 33 + item) >>> 0, 2166136261);
-    const next = () => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; return (state >>> 0) / 4294967296; };
+    // Noise must not depend on how many times something has been read. This used to advance a
+    // counter on every call, so reading the same unchanged canvas twice returned two different
+    // pixels - measured: bytes 59, 60, 59 across three consecutive reads of one canvas, and two
+    // different toDataURL() strings. A real browser is byte-stable for an unchanged canvas, so
+    // that is both a broken instrument and the easiest possible detection: a page just reads twice
+    // and compares. It also coupled canvas and audio through one shared counter, so a canvas read
+    // changed the audio result.
+    //
+    // The perturbation is now a pure function of (seed, byte position) and is applied with XOR, so
+    // it is idempotent as well as stable: a page that reads, writes back and reads again gets the
+    // same bytes instead of drifting. Only one bit of every sampled red channel moves, so no
+    // visible change and alpha is never touched.
+    const seedBytes = new TextEncoder().encode(String(p.seed));
+    let seedHash = 2166136261 >>> 0;
+    for (let i = 0; i < seedBytes.length; i += 1) seedHash = Math.imul(seedHash ^ seedBytes[i], 16777619) >>> 0;
+    // The finalizer has to be non-linear in the seed, which is why this is not the xorshift it
+    // replaced. Xorshift32 uses only XOR and shifts, so it is linear over GF(2): feeding it
+    // "seedHash XOR position" and taking one bit yields L(seed) XOR L(position) for a fixed linear
+    // functional L. The position part is then identical for every seed and the seed contributes
+    // exactly ONE bit - measured, the XOR of bit(sh,i) with bit(sh,0) decomposed identically for
+    // every seed tried, and 2000 seeds produced only 2 distinct 64-sample patterns (bitwise
+    // complements of each other, largest bucket 1012/2000). So two accounts collided on their
+    // canvas noise half the time, and a page could see that every "different" profile differed
+    // only by a global inversion of one fixed pattern. The imul carries below break that
+    // linearity: measured 2000 distinct patterns across 2000 seeds, per-position bit balance
+    // 937-1040 out of 2000.
+    const noise = (x, y) => {
+      let h = (seedHash ^ Math.imul(y * 8192 + x + 1, 2654435761)) >>> 0;
+      h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0;
+      h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0;
+      return h;
+    };
+    // Keyed by the pixel's position on the canvas, NOT by its offset in the buffer the caller asked
+    // for. The previous version walked the returned buffer with a stride derived from its length,
+    // so a pixel's noise depended on the shape of the read: the same canvas read as 32x32 and as 8x8
+    // reported 28 of their 64 overlapping pixels differently. A real browser reports one value per
+    // pixel no matter how it is asked for, so that is a watermark a page can read off by calling
+    // getImageData twice with different rectangles. Here the decision is a pure function of
+    // (seed, x, y), so every read path - including the full-canvas read inside toDataURL below -
+    // agrees, and the result is still stable, still idempotent under read/write/read, and still
+    // sparse (about one pixel in sixteen, red channel only, moved by one).
+    const applyNoise = (data, originX, originY, width) => {
+      for (let i = 0; i < data.length; i += 4) {
+        const pixel = i / 4;
+        if ((noise(originX + (pixel % width), originY + Math.floor(pixel / width)) & 15) === 0) data[i] = (data[i] ^ 1) & 255;
+      }
+      return data;
+    };
     if (p.canvasNoise) {
       const imageData = CanvasRenderingContext2D.prototype.getImageData;
-      CanvasRenderingContext2D.prototype.getImageData = function(...args) { const result = imageData.apply(this, args); if (result.data.length) result.data[0] = (result.data[0] + Math.floor(next() * 3)) & 255; return result; };
+      CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {
+        const result = imageData.call(this, sx, sy, sw, sh);
+        if (result.data.length && sw > 0) applyNoise(result.data, sx, sy, sw);
+        return result;
+      };
       const toDataURL = HTMLCanvasElement.prototype.toDataURL;
-      HTMLCanvasElement.prototype.toDataURL = function(...args) { const context = this.getContext('2d'); if (context) { const pixel = context.getImageData(0, 0, 1, 1); pixel.data[0] = (pixel.data[0] + Math.floor(next() * 3)) & 255; context.putImageData(pixel, 0, 0); } return toDataURL.apply(this, args); };
+      HTMLCanvasElement.prototype.toDataURL = function(...args) {
+        // Encode a perturbed COPY. The previous version perturbed the caller's own 2D context and
+        // wrote it back, which mutated the page's canvas as a side effect of asking for a string;
+        // it also silently did nothing for a WebGL canvas, where getContext('2d') is null.
+        try {
+          const copy = document.createElement('canvas');
+          copy.width = this.width; copy.height = this.height;
+          const context = copy.getContext('2d');
+          if (context) {
+            context.drawImage(this, 0, 0);
+            const image = imageData.call(context, 0, 0, copy.width, copy.height);
+            if (image.data.length && copy.width > 0) applyNoise(image.data, 0, 0, copy.width);
+            context.putImageData(image, 0, 0);
+            return toDataURL.apply(copy, args);
+          }
+        } catch { /* A tainted canvas must still fail exactly as the native call would. */ }
+        return toDataURL.apply(this, args);
+      };
     }
-    if (p.audioNoise && globalThis.AnalyserNode) { const frequency = AnalyserNode.prototype.getFloatFrequencyData; AnalyserNode.prototype.getFloatFrequencyData = function(array) { frequency.call(this, array); if (array.length) array[0] += next() * 0.0001; }; }
+    if (p.audioNoise && globalThis.AnalyserNode) {
+      const frequency = AnalyserNode.prototype.getFloatFrequencyData;
+      const audioBias = ((seedHash >>> 8) & 255) / 255 * 2e-4 - 1e-4;
+      // The native call rewrites the whole array first, so this offset cannot accumulate.
+      AnalyserNode.prototype.getFloatFrequencyData = function(array) { frequency.call(this, array); if (array.length) array[0] += audioBias; };
+    }
     try { const originalResolved = Intl.DateTimeFormat.prototype.resolvedOptions; Intl.DateTimeFormat.prototype.resolvedOptions = function() { return { ...originalResolved.call(this), timeZone: p.timezone }; }; } catch {}
     if (p.webRtcPolicy === 'disable_non_proxied_udp' && globalThis.RTCPeerConnection) {
       try {
@@ -237,7 +338,11 @@ export class FingerprintService {
   }
 
   reset(accountId: string): FingerprintProfile {
-    const account = this.account(accountId); const next = createFingerprintProfile(account.platform); next.enabled = false;
+    // "Restore defaults" restores the default profile, and the default is now enabled. It used to
+    // force `enabled = false`, which would have made this the one control in the editor that
+    // silently switches the feature off - regenerate() already preserves the flag, so both now
+    // leave the enable state exactly as the user set it.
+    const account = this.account(accountId); const next = { ...createFingerprintProfile(account.platform), enabled: account.fingerprint.enabled };
     return this.accounts.update(accountId, { fingerprint: next }).fingerprint;
   }
 

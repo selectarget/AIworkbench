@@ -96,8 +96,23 @@ async function main() {
       canvas.width = 32;
       canvas.height = 32;
       const context = canvas.getContext('2d');
-      context?.fillRect(0, 0, 32, 32);
-      const canvasSamples = context ? Array.from({ length: 16 }, () => context.getImageData(0, 0, 1, 1).data[0]) : [];
+      let canvasStable = null;
+      let canvasPerturbed = null;
+      if (context) {
+        // An opaque fill makes the un-noised value known (every red byte starts at 255), so a
+        // perturbation is observable and a missing one is not confused with an empty canvas.
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, 32, 32);
+        const readCanvas = () => Array.from(context.getImageData(0, 0, 32, 32).data);
+        const firstRead = readCanvas();
+        // Reading an unchanged canvas twice must return identical bytes - that is what a real
+        // browser does, and a page that gets two different answers has found the hook. This used to
+        // assert the opposite (`new Set(samples).size >= 2` over 16 reads of one pixel), which
+        // required the noise to be non-deterministic. The engine it was written against advanced a
+        // counter per call, so byte 0 read 59, 60, 59 across three consecutive reads.
+        canvasStable = JSON.stringify(firstRead) === JSON.stringify(readCanvas());
+        canvasPerturbed = firstRead.some((value, index) => index % 4 === 0 && value !== 255);
+      }
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
       const webgl = gl ? { vendor: gl.getParameter(37445), renderer: gl.getParameter(37446) } : null;
       let rtcPolicy = 'unavailable';
@@ -127,7 +142,8 @@ async function main() {
         devicePixelRatio: window.devicePixelRatio,
         screen: { width: screen.width, height: screen.height, availWidth: screen.availWidth, availHeight: screen.availHeight },
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        canvasUniqueSamples: new Set(canvasSamples).size,
+        canvasStable,
+        canvasPerturbed,
         webgl,
         rtcPolicy
       };
@@ -144,12 +160,13 @@ async function main() {
     if (result.userAgentData.highEntropy.architecture !== profile.userAgentDataArchitecture || result.userAgentData.highEntropy.bitness !== profile.userAgentDataBitness || result.userAgentData.highEntropy.platformVersion !== profile.userAgentDataPlatformVersion) failures.push('high entropy User-Agent Client Hints mismatch');
     if (result.devicePixelRatio !== profile.deviceScaleFactor || result.screen.width !== profile.screenWidth || result.screen.height !== profile.screenHeight) failures.push('screen profile mismatch');
     if (result.timezone !== profile.timezone) failures.push('timezone mismatch');
-    if (profile.canvasNoise && result.canvasUniqueSamples < 2) failures.push('canvas noise hook did not change observed samples');
+    if (profile.canvasNoise && result.canvasStable !== true) failures.push('canvas reads of an unchanged canvas are not stable - the noise is not a pure function of the seed and the byte position');
+    if (profile.canvasNoise && result.canvasPerturbed !== true) failures.push('canvas noise hook did not perturb any sampled pixel');
     if (result.webgl && (result.webgl.vendor !== profile.webGlVendor || result.webgl.renderer !== profile.webGlRenderer)) failures.push('WebGL profile mismatch');
     if (profile.webRtcPolicy === 'disable_non_proxied_udp' && result.rtcPolicy !== 'relay' && result.rtcPolicy !== 'unavailable') failures.push(`WebRTC policy mismatch: ${result.rtcPolicy}`);
     if (failures.length) throw new Error(`fingerprint runtime failed: ${JSON.stringify({ failures, result, expected: profile })}`);
     console.log(`fingerprint runtime ok: early hook, UA/UA-CH, screen, timezone, canvas noise, WebRTC policy${result.webgl ? ' and WebGL' : ''}`);
-    console.log(`fingerprint runtime details: ${JSON.stringify({ inline: result.inline.applied, platform: result.platform, dataPlatform: result.userAgentData.platform, canvasUniqueSamples: result.canvasUniqueSamples, webgl: result.webgl, rtcPolicy: result.rtcPolicy })}`);
+    console.log(`fingerprint runtime details: ${JSON.stringify({ inline: result.inline.applied, platform: result.platform, dataPlatform: result.userAgentData.platform, canvasStable: result.canvasStable, canvasPerturbed: result.canvasPerturbed, webgl: result.webgl, rtcPolicy: result.rtcPolicy })}`);
   } catch (error) {
     console.error(error instanceof Error ? error.stack ?? error.message : String(error));
     failed = true;

@@ -66,7 +66,12 @@ export const proxySchema = z.object({
 export type ProxyConfig = z.infer<typeof proxySchema>;
 
 export const fingerprintSchema = z.object({
-  enabled: z.boolean().default(false),
+  // These three are the field-level defaults, so they are what `fingerprintSchema.parse({})`
+  // actually yields - the object-level default on accountSchema.fingerprint below is only reached
+  // when the whole `fingerprint` key is absent. They are kept in step with what
+  // createFingerprintProfile() generates, so the new-account form opens showing the values that
+  // will really be saved instead of a profile the generator is about to overwrite.
+  enabled: z.boolean().default(true),
   seed: z.string().regex(/^[a-zA-Z0-9_-]{0,128}$/).default(''),
   // Runtime-shaped values are adapted when an account moves between the two
   // supported desktop operating systems.
@@ -92,8 +97,8 @@ export const fingerprintSchema = z.object({
   deviceScaleFactor: z.number().min(0.5).max(8).default(1),
   timezone: z.string().max(128).default(''),
   webRtcPolicy: z.enum(['default', 'disable_non_proxied_udp']).default('default'),
-  canvasNoise: z.boolean().default(false),
-  audioNoise: z.boolean().default(false),
+  canvasNoise: z.boolean().default(true),
+  audioNoise: z.boolean().default(true),
   generatedAt: z.string().datetime().optional(),
   lastAppliedAt: z.string().datetime().optional(),
   lastError: z.string().max(2000).default('')
@@ -131,7 +136,12 @@ export const accountSchema = z.object({
   customUrl: webUrlSchema.optional(),
   proxy: proxySchema.default({ enabled: false, mode: 'direct', type: 'http', host: '', username: '', password: '', directScheme: 'http', directAddressText: '', directAuthText: '', subscriptionUrl: '', subscriptionUserAgent: 'sing-box', selectedNodeName: '', selectedNodeTag: '', subscriptionConfigJson: '', subscriptionNodes: [], lastRuntimeError: '' }),
   browser: browserProfileSchema.default({ homeUrl: '', lastUrl: '', zoomFactor: 1, restoreOnStart: true }),
-  fingerprint: fingerprintSchema.default({ enabled: false, seed: '', userAgent: '', platform: '', vendor: 'Google Inc.', languages: ['zh-CN', 'zh', 'en'], hardwareConcurrency: 8, deviceMemory: 8, maxTouchPoints: 0, webGlVendor: 'Google Inc.', webGlRenderer: 'ANGLE (Default Renderer)', userAgentDataBrands: '', userAgentDataFullVersionList: '', userAgentDataMobile: false, userAgentDataPlatform: '', userAgentDataArchitecture: '', userAgentDataBitness: '', userAgentDataPlatformVersion: '', screenWidth: 1920, screenHeight: 1080, deviceScaleFactor: 1, timezone: '', webRtcPolicy: 'default', canvasNoise: false, audioNoise: false, lastError: '' }),
+  // Stable random fingerprinting is on by default: a new account is isolated unless the user
+  // deliberately turns it off. This default is what the new-account form starts from, and
+  // createFingerprintProfile() in src/main/fingerprint.ts carries the same default for the paths
+  // that generate a profile server-side - the two have to agree or the form's `enabled` would
+  // overwrite the generated one when the account is saved.
+  fingerprint: fingerprintSchema.default({ enabled: true, seed: '', userAgent: '', platform: '', vendor: 'Google Inc.', languages: ['zh-CN', 'zh', 'en'], hardwareConcurrency: 8, deviceMemory: 8, maxTouchPoints: 0, webGlVendor: 'Google Inc.', webGlRenderer: 'ANGLE (Default Renderer)', userAgentDataBrands: '', userAgentDataFullVersionList: '', userAgentDataMobile: false, userAgentDataPlatform: '', userAgentDataArchitecture: '', userAgentDataBitness: '', userAgentDataPlatformVersion: '', screenWidth: 1920, screenHeight: 1080, deviceScaleFactor: 1, timezone: '', webRtcPolicy: 'default', canvasNoise: false, audioNoise: false, lastError: '' }),
   createdAt: z.string().datetime(),
   order: z.number().int().nonnegative()
 });
