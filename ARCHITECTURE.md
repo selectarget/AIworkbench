@@ -344,6 +344,8 @@ Dola 页面桥检测到生成完成的视频后，经 Main Process 按账号、�
 
 当前内置扩展不再直接调用 `chrome.downloads.download()`，其下载请求通过 `chrome.tabs.sendMessage()` 转交当前账号页面，再由 `electronDownload` 进入 remote preload 和 `MediaService` 队列。页面原生下载仍由 `BrowserManager` 的 `will-download` 事件阻止默认行为并转成 `siteDownloadSink`。这样统一了账号 Session、代理、Referer、重试、`.part` 临时文件、文件路径安全和任务状态；扩展 manifest 也不再申请 `downloads` 权限。
 
+`electronDownload` 的媒体类型是靠 URL 猜的，猜错就会去取一个 HTML 页面。因此这条路径入队的任务会带上 `automatic` 标记：它失败时不进下载队列（用户没有要求过这次下载），同一个素材也不会被反复重新入队；用户在主界面点“下载”产生的任务不带该标记，失败时会保留一行并可重试。下载任务持久化在 `data/config/download-tasks.json`，所以队列只会增长，失败行由界面折叠成一行摘要，并提供“全部重试 / 清除”。
+
 设置面板支持导入 ZIP/CRX/目录形式的 MV2/MV3 自定义插件。插件文件会复制到应用配置目录，按账号 Session 独立加载；启用/禁用会同步到已打开的账号页面，删除前会校验路径必须位于插件根目录内。
 
 ### 8.3 当前插件功能清单

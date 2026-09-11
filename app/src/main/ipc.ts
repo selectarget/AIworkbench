@@ -150,6 +150,7 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
   register(window, channels.mediaTasks, z.undefined(), () => media.tasks());
   register(window, channels.mediaCancel, z.string(), (id) => media.cancel(id));
   register(window, channels.mediaRetry, z.string(), (id) => media.retry(id));
+  register(window, channels.mediaClearFailed, z.undefined(), () => { media.clearFailed(); });
   register(window, channels.mediaConvertForPreview, z.string().min(1).max(200), (id) => media.convertForPreview(id));
   register(window, channels.mediaToolStatus, z.undefined(), () => media.toolStatus());
   register(window, channels.faceGridChooseImage, z.undefined(), async () => {
@@ -285,7 +286,10 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
     if (!parsed.data.url && (account.platform !== 'dola' || parsed.data.type !== 'video' || !hasDolaLocator)) return;
     if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), parsed.data)) return;
     const added = media.add(accountId, parsed.data);
-    if (added && parsed.data.autoDownload && added.url) media.enqueue(added.id);
+    // A page-side capture asked for this download, not the user: the page types the URL by
+    // guessing, so a wrong guess fetches an HTML page. Those failures are marked automatic and
+    // stay out of the queue - see downloadTaskSchema. The user's own 下载 still reports.
+    if (added && parsed.data.autoDownload && added.url) media.enqueue(added.id, { automatic: true });
     if (added) void media.materializeBlobPreview(added.id).catch(() => undefined);
   };
   ipcMain.on(channels.remoteMedia, remoteMediaHandler);

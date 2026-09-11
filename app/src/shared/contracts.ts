@@ -436,7 +436,16 @@ export const downloadTaskSchema = z.object({
   id: z.string(), resourceId: z.string(), accountId: z.string(), title: z.string(),
   status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']), receivedBytes: z.number().nonnegative(),
   totalBytes: z.number().nonnegative().optional(), progress: z.number().min(0).max(100).optional(), path: z.string().optional(), error: z.string().optional(),
-  attempts: z.number().int().nonnegative(), createdAt: z.string().datetime(), updatedAt: z.string().datetime()
+  attempts: z.number().int().nonnegative(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  /**
+   * Set when the workbench queued this download on its own initiative - a page-side
+   * capture that asked to be downloaded - rather than because the user pressed 下载.
+   * A page capture guesses the media type from the URL, so it can guess wrong and
+   * fetch an HTML page; that verdict is not a failure the user asked for and is kept
+   * out of the queue. A manual download keeps its failure row, because then it is the
+   * user's own request that did not work. Absent means manual (older records included).
+   */
+  automatic: z.boolean().optional()
 });
 export type DownloadTask = z.infer<typeof downloadTaskSchema>;
 /** Completion notice for an ordinary Chromium download (PDF, ZIP, JSON, etc.). */
@@ -547,6 +556,7 @@ export interface WorkbenchApi {
     tasks(): Promise<ApiResult<DownloadTask[]>>;
     cancel(taskId: string): Promise<ApiResult<void>>;
     retry(taskId: string): Promise<ApiResult<DownloadTask>>;
+    clearFailed(): Promise<ApiResult<void>>;
     convertForPreview(resourceId: string): Promise<ApiResult<PreviewConversionResult>>;
     toolStatus(): Promise<ApiResult<MediaToolStatus>>;
     onUpdated(listener: (resources: MediaResource[]) => void): () => void;

@@ -363,16 +363,36 @@ export class MediaService {
   }
   private isPathOccupied(path: string): boolean { return existsSync(path) || existsSync(`${path}.part`) || this.reservedPaths.has(path); }
 
-  enqueue(resourceId: string): DownloadTask {
+  enqueue(resourceId: string, options: { automatic?: boolean } = {}): DownloadTask {
     const resource = this.resources.get(resourceId); if (!resource) throw new Error('素材不存在');
     if (!resource.url) throw new Error('素材还没有可下载地址，请先解析 Dola 原始资源');
-    const existing = this.tasks().find((task) => task.resourceId === resourceId && (['queued', 'running'].includes(task.status) || (task.status === 'completed' && Boolean(task.path && existsSync(task.path))))); if (existing) return existing;
-    const now = new Date().toISOString(); const task: DownloadTask = { id: randomUUID(), resourceId, accountId: resource.accountId, title: resource.title || resource.type, status: 'queued', receivedBytes: 0, attempts: 0, createdAt: now, updatedAt: now };
+    const automatic = options.automatic === true;
+    const existing = this.tasks().find((task) => task.resourceId === resourceId && (['queued', 'running'].includes(task.status) || (task.status === 'completed' && Boolean(task.path && existsSync(task.path)))
+      // An automatic capture must not mint a fresh row every time the page re-offers the same
+      // resource. A page-side capture types a URL by guessing, so its failures are permanent -
+      // the file it fetched is simply not media. Without this, every page load re-enqueued the
+      // same three resources and each session added another identical failed row.
+      // A manual enqueue is exempt: that is the user asking again, and gets a new attempt.
+      || (automatic && task.status === 'failed')));
+    if (existing) return existing;
+    const now = new Date().toISOString(); const task: DownloadTask = { id: randomUUID(), resourceId, accountId: resource.accountId, title: resource.title || resource.type, status: 'queued', receivedBytes: 0, attempts: 0, createdAt: now, updatedAt: now, automatic: automatic || undefined };
     this.taskMap.set(task.id, task); this.persistTasks(); this.emitTasks(); void this.pump(); return task;
   }
   enqueueMany(resourceIds: string[]): DownloadTask[] { return [...new Set(resourceIds)].map((id) => this.enqueue(id)); }
   cancel(id: string): void { const task = this.taskMap.get(id); if (!task || !['queued', 'running'].includes(task.status)) return; this.aborters.get(id)?.abort(); this.updateTask(id, { status: 'cancelled', error: undefined }); }
   retry(id: string): DownloadTask { const task = this.taskMap.get(id); if (!task) throw new Error('下载任务不存在'); if (!['failed', 'cancelled'].includes(task.status)) throw new Error('当前任务不能重试'); const next = this.updateTask(id, { status: 'queued', error: undefined, receivedBytes: 0, totalBytes: undefined, progress: undefined, path: undefined }); void this.pump(); return next; }
+  /**
+   * Drop every task that has stopped moving: failed and cancelled. Tasks are persisted, so
+   * without this the queue only ever grows - a failure from three weeks ago still occupies a
+   * row, and there is no completed download to match it against. Only the queue is cleared;
+   * the resources themselves stay in the material list and can be downloaded again.
+   */
+  clearFailed(): void {
+    const dropped = [...this.taskMap.values()].filter((task) => task.status === 'failed' || task.status === 'cancelled');
+    if (!dropped.length) return;
+    for (const task of dropped) this.taskMap.delete(task.id);
+    this.persistTasks(); this.emitTasks();
+  }
 
   private async pump(): Promise<void> {
     while (this.running < this.settings.get().downloadConcurrency) {

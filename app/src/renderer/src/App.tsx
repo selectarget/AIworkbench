@@ -421,7 +421,12 @@ export function App(): React.JSX.Element {
   const groupedAccounts = useMemo(() => [...new Set(filteredAccounts.map((account) => account.group || '未分组'))].map((name) => ({ name, accounts: filteredAccounts.filter((account) => (account.group || '未分组') === name) })), [filteredAccounts]);
   // The type filter that used to sit above the list is gone: with image parsing off by
   // default the stream is video-only, so 全部/图片/视频 had nothing to choose between.
-  const queueCount = tasks.filter((task) => ['queued', 'running', 'failed'].includes(task.status)).length;
+  // The queue is what is still moving. Failures are split out: a page-side capture that guessed
+  // the media type wrong is not a download the user asked for (`automatic`), and the rest are
+  // collapsed into one summary line rather than one row each, because a row's job here is status.
+  const activeTasks = tasks.filter((task) => ['queued', 'running'].includes(task.status));
+  const failedTasks = tasks.filter((task) => task.status === 'failed' && !task.automatic);
+  const queueCount = activeTasks.length;
   const allSelected = resources.length > 0 && selectedMedia.length === resources.length;
   const accountName = (id: string | null): string => accounts.find((account) => account.id === id)?.name ?? '未选择';
   const activeAccount = accounts.find((account) => account.id === activeId);
@@ -581,6 +586,14 @@ export function App(): React.JSX.Element {
     try { unwrap(await window.workbench.browser.resolveDolaResource(resource.accountId, dolaReference(resource), downloadAfterResolve)); setStatus(downloadAfterResolve ? '已请求 Dola 页面解析并下载原始资源' : '已请求 Dola 页面解析原始资源'); } catch (error) { report(error); }
   }
   async function download(resource: MediaResource): Promise<void> { if (!resource.url) return resolveDolaResource(resource, true); try { const task = unwrap(await window.workbench.media.download(resource.id)); setStatus(`已加入下载队列：${task.title}`); } catch (error) { report(error); } }
+  async function retryFailedTasks(): Promise<void> {
+    if (!failedTasks.length) return;
+    try { await Promise.all(failedTasks.map((task) => window.workbench.media.retry(task.id))); setStatus(`已重新排队 ${failedTasks.length} 个失败任务`); } catch (error) { report(error); }
+  }
+  async function clearFailedTasks(): Promise<void> {
+    const count = failedTasks.length;
+    try { unwrap(await window.workbench.media.clearFailed()); setStatus(`已从队列移除 ${count} 个失败任务`); } catch (error) { report(error); }
+  }
   async function copyResourceUrl(resource: MediaResource): Promise<void> { if (!resource.url) return setStatus('当前素材还没有可复制的视频地址'); try { unwrap(await window.workbench.files.copyText(resource.url)); setStatus('素材链接已复制'); } catch (error) { report(error); } }
   async function openResourceUrl(resource: MediaResource): Promise<void> {
     if (!/^https?:\/\//i.test(resource.url)) return setStatus('当前素材不是可在系统浏览器打开的 HTTP/HTTPS 地址');
@@ -895,14 +908,20 @@ export function App(): React.JSX.Element {
               property only into the status bar text. One 下载 in the action row is the single
               download entry now. */}{resource.url && <button onClick={(event) => { event.stopPropagation(); void openResourceUrl(resource); }}>打开链接</button>}{resource.url && <button onClick={(event) => { event.stopPropagation(); void copyResourceUrl(resource); }}>复制链接</button>}{mediaCandidateCount(resource) > 1 && <button onClick={(event) => { event.stopPropagation(); setCandidateResource(resource); }}>候选地址 {mediaCandidateCount(resource)}</button>}{hasDolaResourceLocator(resource) && <button onClick={(event) => { event.stopPropagation(); void resolveDolaResource(resource); }}>解析原始</button>}</div>}
         </article>) : <div className="empty-list"><span>◇</span><strong>等待素材</strong><p>运行期间捕获到的创作结果会出现在这里，网页图标、封面和普通资源会自动过滤。</p></div>}</div>
-        {queueCount > 0 && <div className="task-queue-header"><span>下载队列</span><small>{queueCount} 个任务</small></div>}
+        {(queueCount > 0 || failedTasks.length > 0) && <div className="task-queue-header"><span>下载队列</span>{queueCount > 0 && <small>{queueCount} 个任务</small>}</div>}
         {/* A row's job here is status, not diagnosis. It used to print task.error verbatim -
             `net::ERR_FAILED`, `下载响应不是媒体文件 (text/html; charset=UTF-8)` - as 10px grey body text,
             which is what made this box read as a log rather than a queue. The reason is still one
             hover away on the status cell. The two controls are the app's own close/retry icons now
             instead of a bare `×` and a bare `重试` string, which is how every other button in the
-            app draws itself. */}
-        <div className="download-tasks">{tasks.filter((task) => ['queued','running','failed'].includes(task.status)).slice(0, 4).map((task) => <div key={task.id}><span title={task.title}>{task.title}</span><small title={task.status === 'failed' ? task.error : undefined}>{task.status === 'running' ? `${task.progress ?? '…'}%` : task.status === 'failed' ? '下载失败' : '排队中'}</small>{['queued','running'].includes(task.status) ? <button aria-label={`取消 ${task.title}`} title="取消任务" onClick={() => window.workbench.media.cancel(task.id)}><Icon name="close" size={12} /></button> : <button aria-label={`重试 ${task.title}`} title="重试任务" onClick={() => window.workbench.media.retry(task.id)}><Icon name="retry" size={12} /></button>}</div>)}</div>
+            app draws itself.
+            Failed rows are not listed one per line. Downloads are persisted, so a failure from
+            an earlier session kept a row forever and the box read as a growing log; the four
+            identical `下载失败` lines the user saw were one resource re-captured every session.
+            One summary line states the fact, and the two controls are the only things worth
+            doing with it. Individual rows are the failures the user asked for - a page-side
+            capture that failed is marked `automatic` and never reaches here. */}
+        <div className="download-tasks">{activeTasks.slice(0, 4).map((task) => <div key={task.id}><span title={task.title}>{task.title}</span><small>{task.status === 'running' ? `${task.progress ?? '…'}%` : '排队中'}</small><button aria-label={`取消 ${task.title}`} title="取消任务" onClick={() => window.workbench.media.cancel(task.id)}><Icon name="close" size={12} /></button></div>)}{failedTasks.length > 0 && <div className="download-failed"><span title={[...new Set(failedTasks.map((task) => `${task.title}\n${task.error ?? ''}`))].join('\n\n')}>⚠ {failedTasks.length} 个任务下载失败</span><button onClick={() => void retryFailedTasks()}>全部重试</button><button onClick={() => void clearFailedTasks()}>清除</button></div>}</div>
       </aside>
     </main>
     {modal === 'account' && <Modal title={editingId ? '编辑账号' : '添加账号'} wide onClose={() => setModal(null)} footer={<><button onClick={() => setModal(null)}>取消</button><button className="primary" disabled={busy} onClick={saveAccount}>保存账号</button></>}>

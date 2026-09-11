@@ -217,3 +217,52 @@ describe('media download queue', () => {
     rmSync(first.path, { force: true });
   });
 });
+
+describe('failed download rows', () => {
+  // A page-side capture types a URL by guessing, so it can guess wrong and fetch an HTML page.
+  // That is what filled the queue: the same three resources, re-captured every session, each
+  // one adding another identical `下载失败` row that no amount of clearing removed for good.
+  const htmlPage = { type: 'image', url: 'https://cdn.example.com/page.html', title: '索尼', source: 'site-download' } as const;
+
+  it('does not mint a second row when an automatic capture is re-offered after failing', async () => {
+    const { service } = setup();
+    fetchMock.mockResolvedValue(new Response('<html><body>not media</body></html>', { status: 200, headers: { 'content-type': 'text/html; charset=UTF-8' } }));
+    const resource = service.add('account_1', htmlPage)!;
+    const first = service.enqueue(resource.id, { automatic: true });
+    await waitFor(() => service.tasks()[0]?.status === 'failed');
+    expect(service.tasks()[0]?.automatic).toBe(true);
+    expect(service.enqueue(resource.id, { automatic: true }).id).toBe(first.id);
+    expect(service.tasks()).toHaveLength(1);
+  });
+
+  it('still gives a manual download a fresh attempt after an automatic one failed', async () => {
+    const { service } = setup();
+    fetchMock.mockResolvedValue(new Response('<html><body>not media</body></html>', { status: 200, headers: { 'content-type': 'text/html; charset=UTF-8' } }));
+    const resource = service.add('account_1', htmlPage)!;
+    const automatic = service.enqueue(resource.id, { automatic: true });
+    await waitFor(() => service.tasks()[0]?.status === 'failed');
+    // The user pressing 下载 is asking again, so it must not be swallowed by the earlier verdict.
+    const manual = service.enqueue(resource.id);
+    expect(manual.id).not.toBe(automatic.id);
+    expect(manual.automatic).toBeUndefined();
+    await waitFor(() => service.tasks().every((task) => task.status === 'failed'));
+    expect(service.tasks()).toHaveLength(2);
+  });
+
+  it('clears failed and cancelled rows while keeping completed downloads', async () => {
+    const { service } = setup();
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'video/mp4' } }));
+    const kept = service.add('account_1', { type: 'video', url: 'https://cdn.example.com/kept.mp4', title: '作品', source: 'doubao-creation-resource-panel' })!;
+    service.enqueue(kept.id);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    fetchMock.mockResolvedValue(new Response('<html><body>not media</body></html>', { status: 200, headers: { 'content-type': 'text/html' } }));
+    const broken = service.add('account_1', htmlPage)!;
+    service.enqueue(broken.id);
+    await waitFor(() => service.tasks().some((task) => task.status === 'failed'));
+    service.clearFailed();
+    expect(service.tasks()).toHaveLength(1);
+    expect(service.tasks()[0]?.status).toBe('completed');
+    // The resource itself survives: only the queue entry is dropped.
+    expect(service.list().some((item) => item.id === broken.id)).toBe(true);
+  });
+});

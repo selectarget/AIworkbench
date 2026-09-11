@@ -3305,6 +3305,26 @@ body,
   background: var(--dash-yellow-soft);
 }
 
+/* One row stands in for every failed download (App.tsx renders a single `.download-failed`).
+   It inherits the base `1fr auto auto` grid - label, then two controls - but the 22x22 icon box
+   the cancel control uses would clip a text label, so these two buttons size to their text. */
+.download-failed span {
+  color: var(--dash-ink);
+}
+
+.download-failed button {
+  width: auto;
+  height: 22px;
+  padding: 0 8px;
+  color: var(--dash-ink);
+  background: var(--dash-yellow-soft);
+  border-radius: 999px;
+}
+
+.download-failed button:hover {
+  background: var(--dash-yellow);
+}
+
 .modal-backdrop {
   background: rgb(44 52 57 / 26%);
   backdrop-filter: blur(12px);
