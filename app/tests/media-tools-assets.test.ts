@@ -20,6 +20,7 @@ describe('media preview tool assets', () => {
     const bytes = readFileSync(binary);
     expect(existsSync(binary)).toBe(true);
     expect(statSync(binary).size).toBeGreaterThan(minimumSize);
+    if (process.platform !== 'win32') expect(statSync(binary).mode & 0o111).toBe(0o111);
     expect(bytes.readUInt32LE(0)).toBe(0xfeedfacf);
     expect(bytes.readUInt32LE(4)).toBe(expectedCpuType);
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(expectedHash);

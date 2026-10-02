@@ -45,7 +45,12 @@ console.log(`native media resources ok: ${requested.join(', ')}`);
 async function ensureResource(key) {
   const item = resources[key];
   const destination = join(root, item.binary);
-  if (isValid(destination, item)) return;
+  if (isValid(destination, item)) {
+    // Git LFS checkouts created on Windows may retain a non-executable mode.
+    // Restore it even when the existing binary already passes its hash checks.
+    if (key.startsWith('darwin-') && process.platform !== 'win32') chmodSync(destination, 0o755);
+    return;
+  }
   if (!item.download) {
     throw new Error(`缺少可发布的 FFmpeg：${destination}；请放入匹配平台的静态可执行文件`);
   }
