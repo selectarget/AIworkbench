@@ -150,12 +150,26 @@ export type Account = z.infer<typeof accountSchema>;
 export const accountInputSchema = accountSchema.omit({ schemaVersion: true, id: true, createdAt: true, order: true });
 export type AccountInput = z.infer<typeof accountInputSchema>;
 
+export const batchCreateAccountsSchema = z.object({
+  count: z.number().int().min(1).max(50),
+  platform: platformIdSchema,
+  namePrefix: z.string().trim().max(40).optional(),
+  startNumber: z.number().int().min(1).optional(),
+  group: z.string().trim().max(80).optional(),
+  customUrl: webUrlSchema.optional(),
+  proxy: proxySchema.optional()
+});
+export type BatchCreateAccountsInput = z.infer<typeof batchCreateAccountsSchema>;
+
 export const mediaResourceSchema = z.object({
   id: z.string(),
   type: z.enum(['image', 'video']),
   url: z.string(),
   previewUrl: z.string().max(16_384).optional(),
   previewThumbUrl: z.string().max(16_384).optional(),
+  previewStatus: z.enum(['idle', 'loading', 'ready', 'failed']).optional(),
+  previewError: z.string().max(1000).optional(),
+  previewCached: z.boolean().optional(),
   backupUrl: z.string().optional(),
   alternateUrls: z.array(z.string().max(16_384)).max(8).optional(),
   thumbUrl: z.string().optional(),
@@ -215,8 +229,10 @@ export const settingsSchema = z.object({
   videoFilenamePrefix: z.string().trim().max(80).default(''),
   captureMode: captureModeSchema.default('all'),
   parseImages: z.boolean().default(false),
+  blockedSiteRequestCompatibility: z.boolean().default(false),
   downloadConcurrency: z.coerce.number().int().min(1).max(6).default(2),
   downloadRetryCount: z.coerce.number().int().min(0).max(5).default(2),
+  maxOpenAccounts: z.coerce.number().int().min(2).max(100).default(20),
   experimentalResponsePatchEnabled: z.boolean().default(true),
   disabledAdapters: z.array(platformIdSchema).default([]),
   openTabs: z.array(z.string()).default([]),
@@ -232,6 +248,17 @@ export const settingsSchema = z.object({
   migrationCompleted: z.boolean().default(false)
 });
 export type AppSettings = z.infer<typeof settingsSchema>;
+
+// Zod defaults also run inside partial objects. Only retain keys supplied by
+// the caller so a tab update cannot reset directories or other preferences.
+export const settingsPatchSchema = z.record(z.string(), z.unknown()).transform((raw, ctx): Partial<AppSettings> => {
+  const parsed = settingsSchema.partial().safeParse(raw);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) ctx.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+    return z.NEVER;
+  }
+  return Object.fromEntries(Object.entries(parsed.data).filter(([key]) => Object.hasOwn(raw, key)));
+});
 
 export type ProfileLocationInfo = {
   path: string;
@@ -431,12 +458,16 @@ export type DoubaoDurationResult = {
   modelSupports30: boolean;
   bridgeReady: boolean;
 };
-export type DownloadTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type DownloadTaskStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export const downloadTaskSchema = z.object({
   id: z.string(), resourceId: z.string(), accountId: z.string(), title: z.string(),
-  status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']), receivedBytes: z.number().nonnegative(),
+  status: z.enum(['queued', 'running', 'paused', 'completed', 'failed', 'cancelled']), receivedBytes: z.number().nonnegative(),
   totalBytes: z.number().nonnegative().optional(), progress: z.number().min(0).max(100).optional(), path: z.string().optional(), error: z.string().optional(),
   attempts: z.number().int().nonnegative(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  phase: z.enum(['waiting', 'resolving', 'downloading', 'retrying', 'completed']).optional(),
+  speedBytesPerSecond: z.number().nonnegative().optional(), remainingSeconds: z.number().nonnegative().optional(),
+  resumeUrl: z.string().optional(), resumeEtag: z.string().optional(),
+  retryAfter: z.string().datetime().optional(),
   /**
    * Set when the workbench queued this download on its own initiative - a page-side
    * capture that asked to be downloaded - rather than because the user pressed 下载.
@@ -555,6 +586,10 @@ export interface WorkbenchApi {
     selectCandidate(resourceId: string, url: string): Promise<ApiResult<MediaResource>>;
     tasks(): Promise<ApiResult<DownloadTask[]>>;
     cancel(taskId: string): Promise<ApiResult<void>>;
+    pause(taskId: string): Promise<ApiResult<void>>;
+    resumeTask(taskId: string): Promise<ApiResult<DownloadTask>>;
+    preparePreview(resourceId: string): Promise<ApiResult<MediaResource>>;
+    refresh(resourceId: string): Promise<ApiResult<MediaResource>>;
     retry(taskId: string): Promise<ApiResult<DownloadTask>>;
     clearFailed(): Promise<ApiResult<void>>;
     convertForPreview(resourceId: string): Promise<ApiResult<PreviewConversionResult>>;
@@ -602,6 +637,12 @@ export interface WorkbenchApi {
     cleanLegacyCache(): Promise<ApiResult<LegacyCacheCleanReport>>;
   };
   diagnostics(): Promise<ApiResult<DiagnosticsSnapshot>>;
+  exportDiagnostics(): Promise<ApiResult<string | null>>;
+  configuration: {
+    exportBackup(): Promise<ApiResult<string | null>>;
+    restoreBackup(): Promise<ApiResult<{ restored: boolean; accountCount: number }>>;
+    openBackups(): Promise<ApiResult<void>>;
+  };
   updates: {
     check(): Promise<ApiResult<UpdateInfo>>;
     download(): Promise<ApiResult<{ path: string }>>;

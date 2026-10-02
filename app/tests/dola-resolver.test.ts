@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+vi.mock('../src/main/media-request', () => ({ fetchAccountMedia: (target: Session, url: string, options: RequestInit) => target.fetch(url, options) }));
 import { createCipheriv, createHash } from 'node:crypto';
 import type { Session } from 'electron';
 import { buildDolaFallbackUrl, decodeDolaMainUrl, DolaVideoResolver, extractDolaFallbackApis, findDolaKeySeed, parseDolaResolveResponse, resolverUserAgent } from '../src/main/dola-resolver';
@@ -16,6 +17,18 @@ function encodeQaabUrl(url: string, seed: Buffer): { token: string; keySeed: str
 }
 
 describe('Dola platform resolver', () => {
+  it('stops reading oversized streamed API responses and cancels the body', async () => {
+    const cancel = vi.fn(); let chunks = 0;
+    const target = { getUserAgent: () => 'account-ua', fetch: async () => new Response(new ReadableStream({ pull(controller) { chunks++; controller.enqueue(new Uint8Array(6 * 1024 * 1024)); }, cancel })) } as unknown as Session;
+    await expect(new DolaVideoResolver().resolve('https://api.example/fallback', target)).rejects.toThrow('响应过大');
+    expect(cancel).toHaveBeenCalled(); expect(chunks).toBeLessThan(5);
+  });
+  it('preserves signed query encoding exactly as the V6.8 BuildRequestUri method', () => {
+    const value = buildDolaFallbackUrl('https://www.doubao.com/samantha/media/get_play_info?video_id=v1&signature=a%20b%2Fc&opaque=%7E&channel=old&logo_type=watermark&codec_type=1');
+    expect(value).toContain('signature=a%20b%2Fc&opaque=%7E');
+    expect(value).toContain('channel=no&codec_type=8&logo_type=unwatermarked');
+    expect(value).not.toContain('channel=old');
+  });
   it('uses the account session user agent and strips the Electron token', () => {
     const userAgent = resolverUserAgent({ getUserAgent: () => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36 Electron/43.1.1' });
     expect(userAgent).toContain('Macintosh');

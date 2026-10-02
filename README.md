@@ -1,6 +1,6 @@
 # AI 创作工作台：Mac 重建源码
 
-本目录是从 `D:\GitProject\test` 和 `D:\GitProject\test\analysis` 整理出的独立副本。功能对照已切到 **V5.2**（2026-09-05），差量见 [`V52_DELTA.md`](V52_DELTA.md)；反编译材料在 `reference/v52/`，不进入构建。原始 EXE、分析目录和现有工程均未修改。
+本目录是从 `D:\GitProject\test` 和 `D:\GitProject\test\analysis` 整理出的独立副本。功能对照已切到 **V6.8**（2026-10-02），差量见 [`V68_DELTA.md`](V68_DELTA.md)（历史 V5.2 差量见 [`V52_DELTA.md`](V52_DELTA.md)）；反编译材料在 `reference/v68/` 和 `reference/v52/`，不进入构建。原始 EXE、分析目录和现有工程均未修改。
 
 ## 当前迁移状态
 
@@ -21,6 +21,10 @@
 - `reference-original/v44-launcher/`：外层启动器的反编译结果；其中未复制 187 MB 的内置 payload 二进制。
 
 ## 构建与验证
+
+运行诊断保存在数据目录的 `logs/workbench.log`；Chromium 原始 TLS/GPU 报错单独保存在 `logs/chromium.log`，不再持续刷开发终端。此设置仅改变日志去向，保留证书校验与原有网络路由。豆包图片捕获按生成结果的 `image_ori_raw` 和专用作品桥识别，不再用 CDN 域名或图片尺寸判断是否属于作品。
+
+设置 → 常规 → **域名拦截兼容** 默认关闭。已在本机验证为被拦截的五个域名（`mssdk.bytedance.com`、`mon.zijieapi.com`、`vcs.zijieapi.com`、`opt.doubao.com`、`mon-sg.byteintlapi.com`）可在开启后提前取消其 XHR/ping/后台请求，避免已知失败请求继续进入 TLS 握手。选项随时可关闭，不修改 Clash，不提供伪造的成功响应，也不会恢复相关 SDK 接口；网站、登录页面、媒体 CDN 和其他错误仍按原流程处理。仅在原本已拦截这些域名的环境中开启。
 
 在 `app/` 目录执行：
 

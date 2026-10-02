@@ -4,6 +4,8 @@ import type { AppSettings, BrowserNavigationState, ExternalBrowserLayout, Workbe
 // Sandboxed Electron preloads cannot require Rollup's generated relative chunks.
 // Keep these runtime channel names local so this entry is emitted as one file.
 const channels = {
+  diagnosticsExport: 'diagnostics:export', configExport: 'config:export', configRestore: 'config:restore', configOpenBackups: 'config:open-backups',
+  mediaPause: 'media:pause', mediaResume: 'media:resume', mediaPreparePreview: 'media:prepare-preview', mediaRefresh: 'media:refresh',
   accountsList: 'accounts:list', accountsCreate: 'accounts:create', accountsUpdate: 'accounts:update',
   accountsRemove: 'accounts:remove', accountsRemoveMany: 'accounts:remove-many', accountsReorder: 'accounts:reorder', accountsImport: 'accounts:import', accountsExport: 'accounts:export',
   accountsGroups: 'accounts:groups', accountsRenameGroup: 'accounts:rename-group', accountsRemoveGroup: 'accounts:remove-group', accountsBulkUpdate: 'accounts:bulk-update',
@@ -59,6 +61,7 @@ const api: WorkbenchApi = {
     preview: () => invoke(channels.migrationPreview), import: () => invoke(channels.migrationImport), importStorage: (accountId) => invoke(channels.migrationImportStorage, accountId)
   },
   media: {
+    pause: (id) => invoke(channels.mediaPause, id), resumeTask: (id) => invoke(channels.mediaResume, id), preparePreview: (id) => invoke(channels.mediaPreparePreview, id), refresh: (id) => invoke(channels.mediaRefresh, id),
     list: () => invoke(channels.mediaList), clear: () => invoke(channels.mediaClear), download: (id) => invoke(channels.mediaDownload, id), downloadMany: (ids) => invoke(channels.mediaDownloadMany, ids), selectCandidate: (resourceId, url) => invoke(channels.mediaSelectCandidate, { resourceId, url }),
     tasks: () => invoke(channels.mediaTasks), cancel: (id) => invoke(channels.mediaCancel, id), retry: (id) => invoke(channels.mediaRetry, id), clearFailed: () => invoke(channels.mediaClearFailed), convertForPreview: (id) => invoke(channels.mediaConvertForPreview, id), toolStatus: () => invoke(channels.mediaToolStatus),
     onUpdated: (listener) => { const wrapped = (_event: Electron.IpcRendererEvent, value: Parameters<typeof listener>[0]): void => listener(value); ipcRenderer.on(channels.mediaUpdated, wrapped); return () => ipcRenderer.removeListener(channels.mediaUpdated, wrapped); },
@@ -76,6 +79,8 @@ const api: WorkbenchApi = {
   data: { profileLocation: () => invoke(channels.profileLocationGet), chooseProfileLocation: () => invoke(channels.profileLocationChoose), resetProfileLocation: () => invoke(channels.profileLocationReset), restart: () => invoke(channels.profileLocationRestart) },
   maintenance: { scanLegacyCache: () => invoke(channels.maintenanceCacheScan), cleanLegacyCache: () => invoke(channels.maintenanceCacheClean) },
   diagnostics: () => invoke(channels.diagnosticsSnapshot),
+  exportDiagnostics: () => invoke(channels.diagnosticsExport),
+  configuration: { exportBackup: () => invoke(channels.configExport), restoreBackup: () => invoke(channels.configRestore), openBackups: () => invoke(channels.configOpenBackups) },
   updates: { check: () => invoke(channels.updatesCheck), download: () => invoke(channels.updatesDownload), openRelease: () => invoke(channels.updatesOpenRelease) },
   platforms: () => invoke(channels.platforms),
   plugins: {

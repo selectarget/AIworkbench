@@ -12,6 +12,14 @@ function service(): { value: AccountService; file: string } { const dir = mkdtem
 const input = (name: string, group = '') => ({ name, platform: 'doubao' as const, group, remark: '', customUrl: '', proxy: { enabled: false, type: 'http' as const, host: '', username: '', password: '' } });
 
 describe('account groups and bulk operations', () => {
+  it('restores matching configuration without changing account IDs or dropping unrelated accounts', () => {
+    const { value, file } = service(); const account = value.create(input('原账号')); const other = value.create(input('保留账号'));
+    const raw = JSON.parse(readFileSync(file, 'utf8'));
+    value.update(account.id, { ...account, name: '已修改' });
+    expect(value.restoreConfiguration([raw[0]])).toBe(1);
+    expect(value.list().find((item) => item.id === account.id)?.name).toBe('原账号');
+    expect(value.list().some((item) => item.id === other.id)).toBe(true);
+  });
   it('renames and removes groups', () => { const { value } = service(); value.create(input('A', '工作')); value.create(input('B', '工作')); expect(value.groups()).toEqual([{ name: '工作', count: 2 }]); value.renameGroup('工作', '视频'); expect(value.list().every((item) => item.group === '视频')).toBe(true); value.removeGroup('视频'); expect(value.groups()).toEqual([]); });
   it('bulk updates without storing plaintext proxy passwords', () => { const { value, file } = service(); const a = value.create(input('A')); const b = value.create(input('B')); value.bulkUpdate([a.id, b.id], { proxy: { enabled: true, type: 'http', host: '127.0.0.1', port: 8080, username: 'u', password: 'secret' } }); expect(value.list().map((item) => item.proxy.password)).toEqual(['secret', 'secret']); expect(readFileSync(file, 'utf8')).not.toContain('secret'); });
   it('normalizes legacy account records and persists a stable fingerprint', () => { const { value, file } = service(); writeFileSync(file, JSON.stringify([{ id: 1, name: '旧 Dola', kind: 'Dola', proxy: { enabled: false } }])); const account = value.list()[0]!; expect(account.platform).toBe('dola'); expect(account.id).toBe('legacy_1'); expect(account.fingerprint.seed).toBeTruthy(); const saved = JSON.parse(readFileSync(file, 'utf8')) as Array<{ schemaVersion: number; fingerprint: { seed: string } }>; expect(saved[0]?.schemaVersion).toBe(2); expect(saved[0]?.fingerprint.seed).toBe(account.fingerprint.seed); });

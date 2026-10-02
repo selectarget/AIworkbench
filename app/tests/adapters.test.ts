@@ -3,6 +3,21 @@ import { adapters, responsePatchHeaders } from '../src/main/adapters';
 import { platforms } from '../src/shared/platforms';
 
 describe('duration response adapter', () => {
+  it('captures Doubao original creations without collecting hashed interface illustrations', () => {
+    const uiUrl = 'https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-opaque/af81c93e.png';
+    const originalUrl = 'https://p6-flow-imagex-sign.byteimg.com/tos-cn-i-opaque/creation.png';
+    const body = JSON.stringify({
+      features: [{ name: '豆包', image_url: uiUrl, width: 1024, height: 1024 }],
+      messages: [{ content_block: [{ content: { creation_block: { creations: [{
+        prompt: '粘土定格动画制作要求', image: { image_ori_raw: { url: originalUrl, width: 2048, height: 2048 }, image_thumb: { url: 'https://cdn.example.com/preview.png' } }
+      }] } } }] }]
+    });
+    expect(adapters.doubao.parseResponse!('https://www.doubao.com/im/chain/single', body)).toEqual([
+      expect.objectContaining({ type: 'image', url: originalUrl, resolutionMethod: 'image-ori-raw', qualityEvidence: 'server-original' })
+    ]);
+    expect(adapters.doubao.parseResponse!('https://www.doubao.com/alice/config', JSON.stringify({ image_url: uiUrl, width: 2048, height: 2048 }))).toEqual([]);
+  });
+
   it('adds a 15 second primitive option', () => {
     const result = adapters.doubao.patchResponse!('https://www.doubao.com/samantha/skill/pack', JSON.stringify({ duration_options: [5, 10] }));
     expect(result.changed).toBe(true); expect(JSON.parse(result.body).duration_options).toEqual([5, 10, 15]);

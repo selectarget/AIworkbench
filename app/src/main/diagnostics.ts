@@ -1,7 +1,25 @@
 import type { Account, BrowserDiagnostic, DiagnosticsSnapshot, DownloadTask, MediaResource, PlatformId, ProxyRuntimeState } from '../shared/contracts';
 import { adapters } from './adapters';
 
-const taskStatuses = ['queued', 'running', 'completed', 'failed', 'cancelled'] as const;
+export function redactDiagnosticText(value: string): string {
+  return value.replace(/https?:\/\/[^\s<>"']+/gi, (url) => {
+    try { const parsed = new URL(url); return `${parsed.protocol}//${parsed.host}/[已隐藏路径及参数]`; } catch { return '[已隐藏地址]'; }
+  }).replace(/(?:C|D|E):[\\/]Users[\\/][^\\/\s]+/gi, 'C:\\Users\\[用户]')
+    .replace(/((?:password|authorization|cookie|token|key_seed|signature)\s*[:=]\s*)[^\s,;]+/gi, '$1[已隐藏]');
+}
+
+export function supportReport(snapshot: DiagnosticsSnapshot, resources: MediaResource[], tasks: DownloadTask[]): unknown {
+  const ids = new Map(snapshot.accounts.map((account, index) => [account.id, `account_${index + 1}`]));
+  return {
+    ...snapshot,
+    accounts: snapshot.accounts.map((account) => ({ ...account, id: ids.get(account.id), name: ids.get(account.id), sessionPartition: `persist:${ids.get(account.id)}`, url: redactDiagnosticText(account.url || ''), fingerprint: { ...account.fingerprint, lastError: account.fingerprint.lastError ? redactDiagnosticText(account.fingerprint.lastError) : undefined }, proxy: { ...account.proxy, selectedNodeName: undefined, error: account.proxy.error ? redactDiagnosticText(account.proxy.error) : undefined } })),
+    media: resources.map((resource) => ({ account: ids.get(resource.accountId), type: resource.type, source: resource.source, previewStatus: resource.previewStatus || 'idle', cached: Boolean(resource.previewCached), candidateCount: [resource.url, resource.backupUrl, ...(resource.alternateUrls || [])].filter(Boolean).length, expired: Boolean(resource.expiresAt && Date.parse(resource.expiresAt) < Date.now()), previewError: resource.previewError ? redactDiagnosticText(resource.previewError) : undefined })),
+    downloads: tasks.slice(0, 100).map((task) => ({ account: ids.get(task.accountId), status: task.status, phase: task.phase, receivedBytes: task.receivedBytes, totalBytes: task.totalBytes, attempts: task.attempts, error: task.error ? redactDiagnosticText(task.error) : undefined, updatedAt: task.updatedAt })),
+    privacy: '已移除账号名称、作品标题、登录数据、代理凭据及地址路径参数'
+  };
+}
+
+const taskStatuses = ['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'] as const;
 
 export function summarizeDownloadTasks(tasks: DownloadTask[]): DiagnosticsSnapshot['taskCounts'] {
   const counts = Object.fromEntries(taskStatuses.map((status) => [status, 0])) as DiagnosticsSnapshot['taskCounts'];

@@ -1,6 +1,8 @@
 import { createDecipheriv, createHash } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import type { Session } from 'electron';
+import { fetchAccountMedia } from './media-request';
+import { MediaHttpError } from './download-policy';
 
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const FALLBACK_USER_AGENT = process.platform === 'darwin'
@@ -31,7 +33,16 @@ export function buildDolaFallbackUrl(fallbackApi: string): string {
   let url: URL;
   try { url = new URL(fallbackApi.trim()); } catch { throw new Error('fallback_api 不是有效的 HTTP URL'); }
   if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) throw new Error('fallback_api 不是有效的 HTTP URL');
-  url.searchParams.set('channel', 'no'); url.searchParams.set('codec_type', '8'); url.searchParams.set('logo_type', 'unwatermarked');
+  // Match V6.8 LocalVideoResolver.BuildRequestUri: retain the raw query
+  // representation of unrelated fields instead of re-encoding signatures.
+  const overrides = new Set(['channel', 'codec_type', 'logo_type']);
+  const fields = url.search.slice(1).split('&').filter(Boolean).filter((field) => {
+    const encodedKey = field.split('=', 1)[0]!;
+    let key = encodedKey;
+    try { key = decodeURIComponent(encodedKey.replace(/\+/g, ' ')); } catch { /* retain malformed unrelated field */ }
+    return !overrides.has(key);
+  });
+  url.search = [...fields, 'channel=no', 'codec_type=8', 'logo_type=unwatermarked'].join('&');
   return url.href;
 }
 
@@ -203,10 +214,20 @@ export function extractDolaFallbackApis(text: string): string[] {
 
 export class DolaVideoResolver {
   async resolve(fallbackApi: string, target: Session, referer = 'https://dola.com/'): Promise<DolaResolveResult> {
-    const url = buildDolaFallbackUrl(fallbackApi); const response = await target.fetch(url, { headers: { accept: 'application/json,text/plain,*/*', 'user-agent': resolverUserAgent(target), referer, origin: new URL(referer).origin }, signal: AbortSignal.timeout(30000) });
-    if (!response.ok) throw new Error(`Dola fallback_api 请求失败：HTTP ${response.status}`);
-    const length = Number(response.headers.get('content-length')); if (length > MAX_RESPONSE_BYTES) throw new Error('Dola fallback_api 响应过大');
-    const bytes = Buffer.from(await response.arrayBuffer()); if (bytes.length > MAX_RESPONSE_BYTES) throw new Error('Dola fallback_api 响应过大');
-    return parseDolaResolveResponse(bytes.toString('utf8'));
+    const url = buildDolaFallbackUrl(fallbackApi); const response = await fetchAccountMedia(target, url, { headers: { accept: 'application/json,text/plain,*/*', 'user-agent': resolverUserAgent(target), referer, origin: new URL(referer).origin }, signal: AbortSignal.timeout(30000) });
+    if (!response.ok) { await response.body?.cancel(); throw new MediaHttpError(response.status, response.headers.get('retry-after')); }
+    const length = Number(response.headers.get('content-length'));
+    if (length > MAX_RESPONSE_BYTES) { await response.body?.cancel(); throw new Error('fallback_api 响应过大'); }
+    if (!response.body) throw new Error('fallback_api 返回空响应');
+    const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let received = 0;
+    try {
+      while (true) {
+        const next = await reader.read(); if (next.done) break;
+        received += next.value.byteLength;
+        if (received > MAX_RESPONSE_BYTES) throw new Error('fallback_api 响应过大');
+        chunks.push(next.value);
+      }
+    } catch (error) { try { await reader.cancel(); } catch { /* already closed */ } throw error; }
+    return parseDolaResolveResponse(Buffer.concat(chunks).toString('utf8'));
   }
 }

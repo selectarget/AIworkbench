@@ -1,5 +1,7 @@
 export const channels = {
-  accountsList: 'accounts:list', accountsCreate: 'accounts:create', accountsUpdate: 'accounts:update',
+  diagnosticsExport: 'diagnostics:export', configExport: 'config:export', configRestore: 'config:restore', configOpenBackups: 'config:open-backups',
+  mediaPause: 'media:pause', mediaResume: 'media:resume', mediaPreparePreview: 'media:prepare-preview', mediaRefresh: 'media:refresh',
+  accountsList: 'accounts:list', accountsCreate: 'accounts:create', accountsBatchCreate: 'accounts:batch-create', accountsUpdate: 'accounts:update',
   accountsRemove: 'accounts:remove', accountsRemoveMany: 'accounts:remove-many', accountsReorder: 'accounts:reorder', accountsImport: 'accounts:import', accountsExport: 'accounts:export',
   accountsGroups: 'accounts:groups', accountsRenameGroup: 'accounts:rename-group', accountsRemoveGroup: 'accounts:remove-group', accountsBulkUpdate: 'accounts:bulk-update',
   browserOpen: 'browser:open', browserClose: 'browser:close', browserRefresh: 'browser:refresh', browserOpenBatchWorkspace: 'browser:open-batch-workspace', browserCloseBatchWorkspace: 'browser:close-batch-workspace', browserActivate: 'browser:activate',

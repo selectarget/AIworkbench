@@ -29,6 +29,16 @@ vi.mock('electron', () => ({
 
 import { BrowserManager, classifyNativeDownload, dolaFallbackReferer, inspectDolaCompletionBody, isDolaExternalVideoUrl, ProgrammaticDownloadGuard } from '../src/main/browser-manager';
 
+describe('account runtime budget', () => {
+  it('prevents allocating another account while allowing an already open one', async () => {
+    const manager = new BrowserManager({} as never, {} as never, { get: () => ({ maxOpenAccounts: 2 }) } as never);
+    const entries = (manager as unknown as { entries: Map<string, unknown> }).entries;
+    entries.set('account_a', {}); entries.set('account_b', {});
+    await expect(manager.open('account_a')).resolves.toBeUndefined();
+    await expect(manager.open('account_c')).rejects.toThrow('同时运行 2 个账号');
+  });
+});
+
 describe('programmatic download guard', () => {
   it('matches account and global marks, then expires them', () => {
     const guard = new ProgrammaticDownloadGuard();
@@ -85,6 +95,7 @@ describe('native download classification', () => {
     const accounts = { list: vi.fn(() => []), get: vi.fn() };
     const manager = new BrowserManager({} as never, accounts as never, {} as never);
     const browserSession = {
+      webRequest: { onBeforeRequest: vi.fn() },
       setUserAgent: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
@@ -106,6 +117,7 @@ describe('native download classification', () => {
     const accounts = { list: vi.fn(() => []), get: vi.fn() };
     const manager = new BrowserManager({} as never, accounts as never, {} as never);
     const browserSession = {
+      webRequest: { onBeforeRequest: vi.fn() },
       setUserAgent: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
@@ -134,6 +146,7 @@ describe('native download classification', () => {
     const accounts = { list: vi.fn(() => []), get: vi.fn() };
     const manager = new BrowserManager({} as never, accounts as never, {} as never);
     const browserSession = {
+      webRequest: { onBeforeRequest: vi.fn() },
       setUserAgent: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
@@ -160,6 +173,7 @@ describe('native download classification', () => {
     const accounts = { list: vi.fn(() => []), get: vi.fn() };
     const manager = new BrowserManager({} as never, accounts as never, {} as never);
     const browserSession = {
+      webRequest: { onBeforeRequest: vi.fn() },
       setUserAgent: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
@@ -181,6 +195,7 @@ describe('native download classification', () => {
     const accounts = { list: vi.fn(() => []), get: vi.fn() };
     const manager = new BrowserManager({} as never, accounts as never, {} as never);
     const browserSession = {
+      webRequest: { onBeforeRequest: vi.fn() },
       setUserAgent: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
@@ -204,6 +219,46 @@ describe('native download classification', () => {
 });
 
 describe('browser account reconfiguration', () => {
+  it('resolves concurrent observations once per account and discards results after disposal', async () => {
+    const manager = new BrowserManager({} as never, { list: () => [] } as never, {} as never);
+    let finish!: (result: { videoUrl: string; posterUrl: string }) => void;
+    const resolver = { resolve: vi.fn(() => new Promise<{ videoUrl: string; posterUrl: string }>((resolve) => { finish = resolve; })) };
+    (manager as unknown as { dolaResolver: typeof resolver }).dolaResolver = resolver;
+    const sink = vi.fn(); manager.setMediaSink(sink);
+    const resolveFallbacks = (manager as unknown as { resolveDolaFallbacks(id: string, body: string, referer: string): Promise<void> }).resolveDolaFallbacks.bind(manager);
+    const body = JSON.stringify({ fallback_api: 'https://www.dola.com/fallback?video_id=sample' });
+    const first = resolveFallbacks('account_1', body, 'https://www.dola.com/');
+    await resolveFallbacks('account_1', body, 'https://www.dola.com/');
+    expect(resolver.resolve).toHaveBeenCalledTimes(1);
+    manager.dispose();
+    finish({ videoUrl: 'https://cdn.example/original.mp4', posterUrl: '' });
+    await first;
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it('keeps simultaneous fallback requests isolated between accounts', async () => {
+    const manager = new BrowserManager({} as never, { list: () => [] } as never, {} as never);
+    const resolver = { resolve: vi.fn().mockResolvedValue({ videoUrl: 'https://cdn.example/original.mp4', posterUrl: '' }) };
+    (manager as unknown as { dolaResolver: typeof resolver }).dolaResolver = resolver;
+    const sink = vi.fn(); manager.setMediaSink(sink);
+    const resolveFallbacks = (manager as unknown as { resolveDolaFallbacks(id: string, body: string, referer: string): Promise<void> }).resolveDolaFallbacks.bind(manager);
+    const body = JSON.stringify({ fallback_api: 'https://www.dola.com/fallback?video_id=sample' });
+    await Promise.all([resolveFallbacks('account_1', body, 'https://www.dola.com/'), resolveFallbacks('account_2', body, 'https://www.dola.com/')]);
+    expect(resolver.resolve).toHaveBeenCalledTimes(2);
+    expect(sink.mock.calls.map(([accountId]) => accountId).sort()).toEqual(['account_1', 'account_2']);
+  });
+
+  it('resolves Doubao fallback APIs through the same V6.8 local resolver', async () => {
+    const manager = new BrowserManager({} as never, { list: () => [] } as never, {} as never);
+    const resolver = { resolve: vi.fn().mockResolvedValue({ videoUrl: 'https://v26-vdl.doubao.com/original.mp4', posterUrl: 'https://cdn.example/cover.jpg' }) };
+    (manager as unknown as { dolaResolver: typeof resolver }).dolaResolver = resolver;
+    const sink = vi.fn(); manager.setMediaSink(sink);
+    const resolveFallbacks = (manager as unknown as { resolveDolaFallbacks(id: string, body: string, referer: string, platform: 'doubao'): Promise<void> }).resolveDolaFallbacks.bind(manager);
+    const api = 'https://www.doubao.com/samantha/media/get_play_info?video_id=vid-1';
+    await resolveFallbacks('account_1', JSON.stringify({ fallback_api: api }), 'https://www.doubao.com/', 'doubao');
+    expect(resolver.resolve).toHaveBeenCalledWith(api, undefined, 'https://www.doubao.com/');
+    expect(sink).toHaveBeenCalledWith('account_1', expect.objectContaining({ source: 'doubao-video-fallback-api', vid: 'vid-1', confirmedNoWatermark: true, resolutionMethod: 'fallback_api' }));
+  });
   it('keeps the response URL as the Dola fallback referer', () => {
     expect(dolaFallbackReferer('https://www.dola.com/thread/123')).toBe('https://www.dola.com/thread/123');
     expect(dolaFallbackReferer('not a URL')).toBe('https://www.dola.com/');
@@ -399,6 +454,7 @@ describe('browser account reconfiguration', () => {
     const accounts = { list: vi.fn(() => []), get: vi.fn() };
     const manager = new BrowserManager({} as never, accounts as never, {} as never);
     const browserSession = {
+      webRequest: { onBeforeRequest: vi.fn() },
       setUserAgent: vi.fn(),
       setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),

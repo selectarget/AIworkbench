@@ -1,7 +1,7 @@
 import { safeStorage } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { accountInputSchema, accountSchema, platformIds, type Account, type AccountInput, type GroupSummary } from '../shared/contracts';
+import { accountInputSchema, accountSchema, batchCreateAccountsSchema, platformIds, type Account, type AccountInput, type BatchCreateAccountsInput, type GroupSummary } from '../shared/contracts';
 import { AtomicStore } from './atomic-store';
 import { adaptFingerprintProfile, createFingerprintProfile } from './fingerprint';
 
@@ -48,6 +48,13 @@ function revealPassword(password: string): string {
 }
 
 export class AccountService {
+  restoreConfiguration(raw: Account[]): number {
+    const incoming = accountListSchema.parse(raw);
+    const merged = new Map(this.persisted().map((account) => [account.id, account]));
+    for (const account of incoming) merged.set(account.id, account);
+    this.store.write([...merged.values()].map((account, order) => ({ ...account, order })));
+    return incoming.length;
+  }
   private readonly store: AtomicStore<Account[]>;
   constructor(file: string) { this.store = new AtomicStore(file, accountListSchema, [], migrateAccounts); }
 
@@ -78,6 +85,40 @@ export class AccountService {
     });
     this.store.write([...accounts, account]);
     return this.publicAccount(account);
+  }
+
+  batchCreate(raw: BatchCreateAccountsInput): Account[] {
+    const input = batchCreateAccountsSchema.parse(raw);
+    const accounts = this.persisted();
+    const prefix = input.namePrefix?.trim() || "账号";
+    const startNum = input.startNumber ?? 1;
+    const createdAccounts: Account[] = [];
+    for (let i = 0; i < input.count; i++) {
+      const num = startNum + i;
+      const padNum = num < 10 ? `0${num}` : `${num}`;
+      const name = `${prefix} ${padNum}`;
+      const fingerprint = createFingerprintProfile(input.platform);
+      const rawProxy = input.proxy ?? { enabled: false, mode: "direct", type: "http", host: "", username: "", password: "", directScheme: "http", directAddressText: "", directAuthText: "", subscriptionUrl: "", subscriptionUserAgent: "sing-box", selectedNodeName: "", selectedNodeTag: "", subscriptionConfigJson: "", subscriptionNodes: [], lastRuntimeError: "" };
+      const proxy = { ...rawProxy, password: protectPassword(rawProxy.password ?? "") };
+      const browser = { homeUrl: input.platform === "custom" ? (input.customUrl ?? "") : "", lastUrl: "", zoomFactor: 1, restoreOnStart: true };
+      const account: Account = accountSchema.parse({
+        schemaVersion: 2,
+        id: randomUUID().replaceAll("-", ""),
+        name,
+        platform: input.platform,
+        group: input.group ?? "",
+        remark: "",
+        customUrl: input.platform === "custom" ? (input.customUrl ?? "") : "",
+        order: accounts.length + i,
+        createdAt: new Date().toISOString(),
+        proxy,
+        browser,
+        fingerprint
+      });
+      createdAccounts.push(account);
+    }
+    this.store.write([...accounts, ...createdAccounts]);
+    return createdAccounts.map((account) => this.publicAccount(account));
   }
 
   update(id: string, raw: Partial<AccountInput>): Account {

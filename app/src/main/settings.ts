@@ -4,7 +4,7 @@ import { AtomicStore } from './atomic-store';
 export class SettingsService {
   private readonly store: AtomicStore<AppSettings>;
   private readonly listeners = new Set<(settings: AppSettings, previous: AppSettings) => void>();
-  constructor(file: string, downloadDir: string) {
+  constructor(file: string, private readonly downloadDir: string) {
     this.store = new AtomicStore(file, settingsSchema, settingsSchema.parse({ downloadDir, videoDownloadDir: '' }));
     const current = this.store.read();
     if (!current.downloadDir.trim() || !current.lightThemeMigrated || current.theme !== 'light') this.store.write({
@@ -17,6 +17,7 @@ export class SettingsService {
   update(patch: Partial<AppSettings>): AppSettings {
     const current = this.get();
     const value = settingsSchema.parse({ ...current, ...patch, theme: 'light', bossKey: { ...current.bossKey, ...(patch.bossKey ?? {}) } });
+    value.downloadDir = value.downloadDir.trim() || this.downloadDir;
     this.store.write(value);
     for (const listener of this.listeners) listener(value, current);
     return value;

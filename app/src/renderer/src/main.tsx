@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import './workbench.css';
+import './media-panel.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 document.documentElement.dataset.platform = navigator.platform.startsWith('Win') ? 'windows' : 'other';

@@ -136,6 +136,15 @@ export function parseNdjsonPayloads(text: string): unknown[] {
   return payloads;
 }
 
+// Doubao serves large, hashed illustrations in configuration responses on the
+// same CDN as creations. A CDN hostname or image size cannot prove authorship.
+// Its creation messages expose the original in image_ori_raw; keep that
+// evidence instead of treating every image field in every XHR as a work.
+export function parseDoubaoPayload(text: string): CapturedCandidate[] {
+  return parseMediaPayload(text, 'cdp:doubao').filter((resource) =>
+    resource.type === 'video' || resource.resolutionMethod === 'image-ori-raw');
+}
+
 export function parseMediaPayload(text: string, source = 'network'): CapturedCandidate[] {
   const roots: unknown[] = [];
   try { roots.push(JSON.parse(text)); } catch { roots.push(...parseSsePayloads(text), ...parseNdjsonPayloads(text)); }

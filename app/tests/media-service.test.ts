@@ -5,16 +5,225 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const fetchMock = vi.fn();
+vi.mock('../src/main/media-request', () => ({ fetchAccountMedia: (_session: unknown, url: string, options: unknown) => fetchMock(url, options), setMediaRequestCooldown: vi.fn() }));
 vi.mock('electron', () => ({ session: { fromPartition: () => ({ fetch: fetchMock }) }, shell: { openPath: vi.fn(), showItemInFolder: vi.fn() } }));
-import { captureModeAccepts, MediaService } from '../src/main/media';
+import { captureModeAccepts, mediaErrorMessage, MediaService } from '../src/main/media';
 import type { MediaResource } from '../src/shared/contracts';
 
 const dirs: string[] = [];
 afterEach(() => { fetchMock.mockReset(); while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
-function setup(persist = false, platform = 'doubao', resolveBlob?: (accountId: string, url: string) => Promise<Buffer>, legacyVideoLayout?: boolean, videoFilenamePrefix = '', videoDownloadDir = '', legacyV44MediaFolders = false) { const dir = mkdtempSync(join(tmpdir(), 'workbench-media-')); dirs.push(dir); const accounts = { list: () => [{ id: 'account_1', name: '测试账号', platform, customUrl: '', proxy: {}, group: '', remark: '', createdAt: new Date().toISOString(), order: 0 }] } as any; const settings = { get: () => ({ downloadDir: dir, videoDownloadDir, useAccountDownloadSubfolders: false, downloadFolderPattern: 'account', downloadConcurrency: 1, downloadRetryCount: 0, videoFilenamePrefix, legacyV44MediaFolders, ...(legacyVideoLayout === undefined ? {} : { legacyVideoLayout }) }) } as any; const create = () => new MediaService(accounts, settings, resolveBlob, persist ? join(dir, 'index.json') : undefined, persist ? join(dir, 'tasks.json') : undefined); return { dir, service: create(), create } ; }
+function setup(persist = false, platform = 'doubao', resolveBlob?: (accountId: string, url: string) => Promise<Buffer>, legacyVideoLayout?: boolean, videoFilenamePrefix = '', videoDownloadDir = '', legacyV44MediaFolders = false) { const dir = mkdtempSync(join(tmpdir(), 'workbench-media-')); dirs.push(dir); const accounts = { list: () => [{ id: 'account_1', name: '测试账号', platform, customUrl: '', proxy: {}, group: '', remark: '', createdAt: new Date().toISOString(), order: 0 }] } as any; const settings = { get: () => ({ downloadDir: dir, videoDownloadDir, useAccountDownloadSubfolders: false, downloadFolderPattern: 'account', downloadConcurrency: 1, downloadRetryCount: 0, videoFilenamePrefix, legacyV44MediaFolders, ...(legacyVideoLayout === undefined ? {} : { legacyVideoLayout }) }) } as any; const create = () => new MediaService(accounts, settings, resolveBlob, persist ? join(dir, 'index.json') : undefined, persist ? join(dir, 'tasks.json') : undefined, join(dir, 'cache')); return { dir, service: create(), create } ; }
 async function waitFor(predicate: () => boolean): Promise<void> { for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 10)); } throw new Error('timeout'); }
 
 describe('media download queue', () => {
+  it('retains the same filename when pausing backoff before a partial file exists', async () => {
+    const { service } = setup();
+    const runtime = service as unknown as { settings: { get(): Record<string, unknown> } };
+    const settings = runtime.settings.get(); runtime.settings = { get: () => ({ ...settings, downloadRetryCount: 1 }) };
+    fetchMock.mockResolvedValueOnce(new Response('busy', { status: 503, headers: { 'retry-after': '60' } }));
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/backoff.mp4', source: 'site-download' })!;
+    const task = service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.phase === 'retrying');
+    const path = service.tasks()[0]!.path;
+    service.pause(task.id);
+    fetchMock.mockResolvedValue(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    await service.resumeTask(task.id);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(service.tasks()[0]!.path).toBe(path);
+  });
+
+  it('cancels server-directed retry waiting immediately without issuing another request', async () => {
+    const { service } = setup();
+    const runtime = service as unknown as { settings: { get(): Record<string, unknown> } };
+    const settings = runtime.settings.get(); runtime.settings = { get: () => ({ ...settings, downloadRetryCount: 2 }) };
+    fetchMock.mockResolvedValue(new Response('busy', { status: 503, headers: { 'retry-after': '60' } }));
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/busy.mp4', backupUrl: 'https://cdn.example/backup.mp4', source: 'site-download' })!;
+    const task = service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.phase === 'retrying');
+    service.cancel(task.id);
+    await waitFor(() => service.tasks()[0]?.status === 'cancelled');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops on rate limiting without trying other candidates and restores the account cooldown on restart', async () => {
+    const { service, create } = setup(true);
+    fetchMock.mockResolvedValue(new Response('limited', { status: 429, headers: { 'retry-after': '120' } }));
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/one.mp4', backupUrl: 'https://cdn.example/two.mp4', source: 'site-download' })!;
+    service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.status === 'failed');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(Date.parse(service.tasks()[0]!.retryAfter!)).toBeGreaterThan(Date.now() + 119_000);
+    const restarted = create();
+    const next = restarted.add('account_1', { type: 'video', url: 'https://cdn.example/three.mp4', source: 'site-download' })!;
+    restarted.enqueue(next.id);
+    expect(restarted.tasks().find((task) => task.resourceId === next.id)).toMatchObject({ status: 'queued', error: expect.stringContaining('限流'), retryAfter: expect.any(String) });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repeatedly fetch a permanently rejected signed address after re-resolution', async () => {
+    const { service } = setup();
+    fetchMock.mockResolvedValue(new Response('expired', { status: 403 }));
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/expired.mp4', source: 'site-download' })!;
+    const refresh = vi.fn(async () => { service.add('account_1', { type: 'video', url: resource.url, source: 'site-download' }); });
+    service.setResourceRefresher(refresh);
+    service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.status === 'failed');
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects misleading HTML and partial 206 files instead of marking them complete', async () => {
+    const { service } = setup();
+    fetchMock.mockResolvedValueOnce(new Response('<!doctype html><html>sign expired</html>', { headers: { 'content-type': 'video/mp4' } }));
+    const html = service.add('account_1', { type: 'video', url: 'https://cdn.example/error.mp4', source: 'site-download' })!;
+    service.enqueue(html.id);
+    await waitFor(() => service.tasks()[0]?.status === 'failed');
+    expect(service.tasks()[0]?.error).toContain('不是媒体文件');
+    fetchMock.mockResolvedValueOnce(new Response('video', { status: 206, headers: { 'content-type': 'video/mp4', 'content-length': '5', 'content-range': 'bytes 0-4/100' } }));
+    const short = service.add('account_1', { type: 'video', url: 'https://cdn.example/short.mp4', source: 'site-download' })!;
+    service.enqueue(short.id);
+    await waitFor(() => service.tasks().find((task) => task.resourceId === short.id)?.status === 'failed');
+    expect(service.tasks().find((task) => task.resourceId === short.id)?.error).toContain('不完整');
+  });
+
+  it('limits simultaneous downloads for one account even when the global limit is higher', async () => {
+    const { service } = setup();
+    (service as unknown as { settings: { get(): unknown } }).settings = { get: () => ({ downloadDir: dirs.at(-1), downloadConcurrency: 6, downloadRetryCount: 0, useAccountDownloadSubfolders: false, downloadFolderPattern: 'account' }) };
+    const finish: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => finish.push(resolve)));
+    for (let i = 0; i < 3; i++) service.enqueue(service.add('account_1', { type: 'video', url: `https://cdn.example/concurrent-${i}.mp4`, source: 'site-download' })!.id);
+    await waitFor(() => fetchMock.mock.calls.length === 2);
+    expect(service.tasks().filter((task) => task.status === 'running')).toHaveLength(2);
+    expect(service.tasks().filter((task) => task.status === 'queued')).toHaveLength(1);
+    finish[0]!(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    await waitFor(() => fetchMock.mock.calls.length === 3);
+    finish[1]!(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    finish[2]!(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    await waitFor(() => service.tasks().every((task) => task.status === 'completed'));
+  });
+
+  it('allows a V6.8-resolved CDN stream and retains its provenance after page recapture', async () => {
+    const { service } = setup();
+    const url = 'https://v26-vdl.doubao.com/resolved.mp4';
+    const resource = service.add('account_1', { type: 'video', url, vid: 'vid-v68', source: 'doubao-video-fallback-api', resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true })!;
+    expect(resource).not.toBeNull();
+    service.add('account_1', { type: 'video', url, vid: 'vid-v68', source: 'cdp:doubao', confirmedNoWatermark: true });
+    expect(service.list()[0]?.source).toBe('doubao-video-fallback-api');
+    fetchMock.mockResolvedValue(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(url);
+  });
+  it('does not label a Doubao playback stream as an original or silently download it', async () => {
+    const { service } = setup();
+    const resource = service.add('account_1', { type: 'video', url: 'https://v26-vdl.doubao.com/video.mp4?lr=video_gen_no_watermark', source: 'cdp:doubao', confirmedNoWatermark: true })!;
+    expect(resource.confirmedNoWatermark).toBe(false);
+    service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.status === 'failed');
+    expect(service.tasks()[0]?.error).toContain('播放流');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('resolves an official Doubao download before downloading a playback stream', async () => {
+    const { service } = setup();
+    const resource = service.add('account_1', { type: 'video', vid: 'same-video', url: 'https://v26-vdl.doubao.com/video.mp4?lr=video_gen_no_watermark', source: 'cdp:doubao', confirmedNoWatermark: true })!;
+    const official = 'https://videoweb-download.doubao.com/video.mp4?download=true';
+    service.setResourceRefresher(async () => { service.add('account_1', { type: 'video', vid: 'same-video', url: official, source: 'doubao-creation-resource-panel', confirmedNoWatermark: true }); });
+    fetchMock.mockResolvedValue(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(official);
+    expect(service.list()[0]?.url).toBe(official);
+    service.add('account_1', { type: 'video', vid: 'same-video', url: resource.url, source: 'cdp:doubao', width: 4096, height: 4096 });
+    expect(service.list()[0]?.url).toBe(official);
+  });
+  it('tries a backup preview address after a TLS/socket failure', async () => {
+    const { service } = setup();
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/primary.mp4', backupUrl: 'https://cdn.example/backup.mp4', source: 'doubao-creation-resource-panel' })!;
+    const prepared = (await service.materializeBlobPreview(resource.id))!;
+    fetchMock.mockRejectedValueOnce(new Error('net::ERR_CONNECTION_CLOSED'));
+    fetchMock.mockResolvedValueOnce(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    const response = await service.remotePreviewResponse(new Request(prepared.previewUrl!));
+    expect(response?.status).toBe(200);
+    expect(await response?.text()).toBe('video');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([resource.url, resource.backupUrl]);
+  });
+  it('distinguishes connection closure from HTTPS certificate failures', () => {
+    expect(mediaErrorMessage(new Error('net::ERR_CONNECTION_CLOSED'))).toContain('连接被关闭');
+    expect(mediaErrorMessage(new Error('net::ERR_CERT_AUTHORITY_INVALID'))).toContain('证书配置');
+  });
+  it('resumes a paused download only at the verified byte range', async () => {
+    const { service } = setup();
+    fetchMock.mockImplementationOnce((_url, options) => Promise.resolve(new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array([1, 2, 3, 4])); options.signal.addEventListener('abort', () => controller.error(new DOMException('paused', 'AbortError')), { once: true }); }
+    }), { headers: { 'content-type': 'video/mp4', 'content-length': '8', etag: '"video-v1"' } })));
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/paused.mp4', source: 'doubao-creation-resource-panel' })!;
+    const task = service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.receivedBytes === 4);
+    service.pause(task.id);
+    await waitFor(() => !(service as any).aborters.has(task.id));
+    expect(service.tasks()[0]?.status).toBe('paused');
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([5, 6, 7, 8]), { status: 206, headers: { 'content-type': 'video/mp4', 'content-length': '4', 'content-range': 'bytes 4-7/8', etag: '"video-v1"' } }));
+    await service.resumeTask(task.id);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(fetchMock.mock.calls[1]?.[1].headers).toMatchObject({ Range: 'bytes=4-', 'If-Range': '"video-v1"' });
+    expect([...readFileSync(service.tasks()[0]!.path!)]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+  it('caches a prepared preview and reuses the downloaded file without another fetch', async () => {
+    const { service } = setup();
+    vi.spyOn(service as any, 'createThumbnail').mockResolvedValue(undefined);
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'video/mp4' } })));
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/cached.mp4', source: 'doubao-creation-resource-panel' })!;
+    const prepared = await service.preparePreview(resource.id);
+    expect(prepared.previewCached).toBe(true); expect(service.previewPath(prepared.previewUrl!)).toBeTruthy();
+    const calls = fetchMock.mock.calls.length;
+    await service.preparePreview(resource.id); expect(fetchMock).toHaveBeenCalledTimes(calls);
+    service.enqueue(resource.id); await waitFor(() => service.tasks()[0]?.status === 'completed');
+    const afterDownload = fetchMock.mock.calls.length;
+    const local = await service.preparePreview(resource.id);
+    expect(service.previewPath(local.previewUrl!)).toBe(service.tasks()[0]?.path);
+    expect(fetchMock).toHaveBeenCalledTimes(afterDownload);
+  });
+  it('refreshes an expired signed address and downloads the newly captured result', async () => {
+    const { service } = setup();
+    const base = { type: 'video', source: 'doubao-creation-resource-panel', messageId: 'generated-1' };
+    const resource = service.add('account_1', { ...base, url: 'https://cdn.example/fresh.mp4?token=old', expiresAt: '2020-01-01T00:00:00.000Z' })!;
+    service.setResourceRefresher(async () => { service.add('account_1', { ...base, url: 'https://cdn.example/fresh.mp4?token=new' }); });
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'video/mp4' } })));
+    service.enqueue(resource.id); await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('token=new');
+  });
+  it('reports a failed preview with an actionable message', async () => {
+    const { service } = setup();
+    fetchMock.mockResolvedValue(new Response('', { status: 403 }));
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/expired.mp4', source: 'doubao-creation-resource-panel' })!;
+    await expect(service.preparePreview(resource.id)).rejects.toThrow('过期');
+    expect(service.list()[0]).toMatchObject({ previewStatus: 'failed', previewError: expect.stringContaining('重新解析') });
+  });
+  it('marks a directory failure as failed and allows the next task to run', async () => {
+    const { service } = setup();
+    const first = service.add('account_1', { type: 'video', url: 'https://cdn.example/first.mp4', source: 'doubao-creation-resource-panel' })!;
+    vi.spyOn(service as any, 'availablePath').mockImplementationOnce(() => { throw new Error('目录不可写'); });
+    service.enqueue(first.id);
+    await waitFor(() => service.tasks().some((task) => task.resourceId === first.id && task.status === 'failed'));
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'video/mp4' } }));
+    const second = service.add('account_1', { type: 'video', url: 'https://cdn.example/second.mp4', source: 'doubao-creation-resource-panel' })!;
+    service.enqueue(second.id);
+    await waitFor(() => service.tasks().some((task) => task.resourceId === second.id && task.status === 'completed'));
+  });
+  it('serves video and cover previews with the owning session and range headers', async () => {
+    const { service } = setup();
+    const resource = service.add('account_1', { type: 'video', url: 'https://cdn.example/video.mp4', thumbUrl: 'https://cdn.example/cover.jpg', source: 'doubao-creation-resource-panel' })!;
+    const prepared = (await service.materializeBlobPreview(resource.id))!;
+    expect(prepared.previewUrl).toMatch(/^workbench-media:\/\/remote\//);
+    expect(prepared.previewThumbUrl).toMatch(/^workbench-media:\/\/remote\//);
+    fetchMock.mockResolvedValue(new Response('video', { status: 206, headers: { 'content-range': 'bytes 0-4/5', 'content-type': 'video/mp4' } }));
+    const response = await service.remotePreviewResponse(new Request(prepared.previewUrl!, { headers: { Range: 'bytes=0-4' } }));
+    expect(response?.status).toBe(206);
+    expect(await response?.text()).toBe('video');
+    expect(fetchMock).toHaveBeenCalledWith(resource.url, expect.objectContaining({ headers: expect.objectContaining({ Range: 'bytes=0-4', Referer: expect.stringContaining('doubao') }) }));
+    service.clear();
+    expect((await service.remotePreviewResponse(new Request(prepared.previewUrl!)))?.status).toBe(404);
+  });
   it('matches V5.2 numbered downloads and skips occupied bare-number directories', async () => {
     const { dir, service } = setup(false, 'qianwen', undefined, undefined, '', '', true);
     mkdirSync(join(dir, 'Videos', '1'), { recursive: true });
@@ -187,6 +396,21 @@ describe('media download queue', () => {
   it('keeps the capture feed runtime-only while restoring task history', async () => { const { service, create } = setup(true); fetchMock.mockResolvedValue(new Response(new Uint8Array([7]), { status: 200 })); service.add('account_1', image('https://cdn.example.com/image_ori_raw/history.png')); service.enqueue(service.list()[0]!.id); await waitFor(() => service.tasks()[0]?.status === 'completed'); const restored = create(); expect(restored.list()).toHaveLength(0); expect(restored.tasks()[0]?.status).toBe('completed'); });
   it('reserves sanitized native download paths and avoids concurrent filename collisions', () => { const { dir, service } = setup(); const first = service.reserveNativeDownloadPath('account_1', 'report<>.pdf'); const second = service.reserveNativeDownloadPath('account_1', 'report<>.pdf'); expect(first).toBe(join(dir, 'report__.pdf')); expect(second).toBe(join(dir, 'report__ (1).pdf')); service.releaseReservedDownloadPath(first); const reusable = service.reserveNativeDownloadPath('account_1', 'report<>.pdf'); expect(reusable).toBe(first); });
   it('rejects generic page assets and non-panel Doubao videos', () => { const { service } = setup(); service.add('account_1', { type: 'image', url: 'https://cdn.example.com/logo.png', source: 'dom-fallback', width: 1024, height: 1024 }); service.add('account_1', { type: 'video', url: 'https://cdn.example.com/ad.mp4', source: 'generic-dom-video' }); expect(service.list()).toEqual([]); });
+  it('requires creation provenance for Doubao images even on its own CDN', () => {
+    const { service } = setup();
+    const opaque = 'https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-opaque/84c27b1.png';
+    expect(service.add('account_1', image(opaque, { source: 'cdp:doubao', title: '豆包', resolutionMethod: 'payload-url' }))).toBeNull();
+    expect(service.add('account_1', image(opaque, { source: 'site-adapter', title: '豆包' }))).toBeNull();
+    expect(service.add('account_1', image(opaque, { source: 'generic-performance-image' }))).toBeNull();
+    const original = service.add('account_1', image('https://cdn.example.com/opaque-original', {
+      source: 'cdp:doubao', resolutionMethod: 'image-ori-raw', qualityEvidence: 'server-original', confirmedNoWatermark: true
+    }));
+    const extension = service.add('account_1', image('https://cdn.example.com/extension-original', {
+      source: 'site-adapter', resolutionMethod: 'platform-original-field', qualityEvidence: 'server-original', confirmedNoWatermark: true
+    }));
+    expect(original).not.toBeNull(); expect(extension).not.toBeNull();
+    expect(service.list()).toHaveLength(2);
+  });
   it('keeps generated API images without dimensions while rejecting UI avatars', () => { const { service } = setup(false, 'kimi'); service.add('account_1', { type: 'image', url: 'https://cdn.example.com/assets/generated/result.png', source: 'cdp:kimi', title: '生成结果' }); service.add('account_1', { type: 'image', url: 'https://cdn.example.com/assets/avatar.png', source: 'cdp:kimi', title: '用户头像' }); expect(service.list()).toEqual([expect.objectContaining({ url: 'https://cdn.example.com/assets/generated/result.png' })]); });
   it('keeps a generated image found through the performance fallback without calling it watermark-free', () => { const { service } = setup(false, 'kimi'); const resource = service.add('account_1', { type: 'image', url: 'https://cdn.example.com/generated/result-1', source: 'generic-performance-image', title: '图片资源' }); expect(resource).toEqual(expect.objectContaining({ qualityEvidence: 'dom-direct', confirmedNoWatermark: false })); expect(service.list()).toHaveLength(1); });
   it('keeps legacy Qianwen API images without dimensions when endpoint evidence is present', () => { const { service } = setup(false, 'qianwen'); service.add('account_1', { type: 'image', url: 'https://workspace-zb-cdn.qianwen.com/generated/result-1', source: 'cdp:qianwen:message-list', qualityEvidence: 'platform-api' }); expect(service.list()).toEqual([expect.objectContaining({ url: 'https://workspace-zb-cdn.qianwen.com/generated/result-1' })]); });

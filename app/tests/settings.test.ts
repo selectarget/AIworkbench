@@ -4,8 +4,31 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { AppSettings } from '../src/shared/contracts';
 import { SettingsService } from '../src/main/settings';
+import { settingsPatchSchema } from '../src/shared/contracts';
 
 describe('settings service', () => {
+  it('defaults blocked-domain compatibility off and persists an explicit choice', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'workbench-settings-network-'));
+    const file = join(dir, 'settings.json');
+    const service = new SettingsService(file, join(dir, 'downloads'));
+    expect(service.get().blockedSiteRequestCompatibility).toBe(false);
+    service.update({ blockedSiteRequestCompatibility: true });
+    const restored = new SettingsService(file, join(dir, 'downloads'));
+    expect(restored.get().blockedSiteRequestCompatibility).toBe(true);
+    restored.update({ blockedSiteRequestCompatibility: false });
+    expect(new SettingsService(file, join(dir, 'downloads')).get().blockedSiteRequestCompatibility).toBe(false);
+  });
+  it('preserves directories and preferences when IPC only updates tabs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'workbench-settings-patch-'));
+    const service = new SettingsService(join(dir, 'settings.json'), join(dir, 'downloads'));
+    service.update({ parseImages: true, videoDownloadDir: join(dir, 'videos') });
+    const patch = settingsPatchSchema.parse({ openTabs: ['account_1'], dualView: true });
+    expect(patch).toEqual({ openTabs: ['account_1'], dualView: true });
+    service.update(patch);
+    expect(service.get()).toMatchObject({ downloadDir: join(dir, 'downloads'), videoDownloadDir: join(dir, 'videos'), parseImages: true });
+    expect(service.update({ downloadDir: ' ' }).downloadDir).toBe(join(dir, 'downloads'));
+    expect(settingsPatchSchema.safeParse({ downloadConcurrency: 99 }).success).toBe(false);
+  });
   it('migrates an old dark theme once while preserving directories and later preferences', () => {
     const dir = mkdtempSync(join(tmpdir(), 'workbench-theme-'));
     const file = join(dir, 'settings.json');

@@ -1,13 +1,17 @@
-import { app, BrowserWindow, dialog, globalShortcut, net, protocol } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, protocol } from 'electron';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { AccountService } from './accounts';
 import { BrowserManager } from './browser-manager';
 import { prepareDataPaths, ProfileLocationService, resolveDataPaths, resolveRuntimeDataOptions } from './data';
 import { registerIpc } from './ipc';
 import { captureModeAccepts, MediaService } from './media';
 import { SettingsService } from './settings';
+import { ConfigBackupService } from './config-backup';
+import { createMediaProtocolHandler } from './media-protocol';
+import { setMediaRequestLogger } from './media-request';
+import { NetworkFailureReporter } from './network-diagnostics';
+import { consumeCompatibilityCancellation } from './site-request-compatibility';
 import { UpdateService } from './updates';
 import { ExternalLoginService } from './external-login';
 import { Logger } from './logger';
@@ -32,7 +36,25 @@ const profileLocation = new ProfileLocationService(dataOptions);
 const paths = resolveDataPaths(dataOptions, profileLocation.get().path);
 protocol.registerSchemesAsPrivileged([{ scheme: 'workbench-media', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }]);
 const logger = new Logger(paths.logs);
+const networkFailures = new NetworkFailureReporter((level, message) => logger[level](message));
+app.once('will-quit', () => networkFailures.dispose());
+setMediaRequestLogger((message) => logger.info(message));
+// Chromium's socket console messages omit the failing destination. Record
+// session request failures without signed URL parameters or login credentials.
+app.on('session-created', (ses) => {
+  ses.webRequest.onErrorOccurred((details) => {
+    // Only cancellations made by our own policy are informational. Ordinary
+    // blocked requests, certificate failures and media errors stay diagnostic.
+    if (consumeCompatibilityCancellation(ses, details.id)) return;
+    networkFailures.record(details);
+  });
+});
 try { prepareDataPaths(paths); app.setPath('userData', paths.sessions); } catch (error) { dialog.showErrorBox('AI创作工作台无法启动', error instanceof Error ? error.message : String(error)); app.exit(1); }
+// Keep native TLS/GPU errors for diagnosis without flooding the development
+// terminal. Certificate validation and network routing remain unchanged.
+app.commandLine.appendSwitch('enable-logging', 'file');
+app.commandLine.appendSwitch('log-file', join(paths.logs, 'chromium.log'));
+app.commandLine.appendSwitch('log-level', '1');
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
@@ -62,6 +84,7 @@ type PersistentServices = {
   updates: UpdateService;
   externalLogin: ExternalLoginService;
   cacheCleaner: LegacyCacheCleaner;
+  backups: ConfigBackupService;
 };
 let persistentServices: PersistentServices | null = null;
 function bossKeyAccelerator(settings: ReturnType<SettingsService['get']>): string | null {
@@ -99,6 +122,8 @@ function getPersistentServices(): PersistentServices {
   if (persistentServices) return persistentServices;
   const accounts = new AccountService(join(paths.config, 'accounts.json'));
   const settings = new SettingsService(join(paths.config, 'settings.json'), paths.downloads);
+  const backups = new ConfigBackupService(paths.config);
+  try { backups.automatic(); } catch (error) { logger.error(error instanceof Error ? error.message : String(error)); }
   if (!accounts.list().length) {
     const legacy = join(app.getPath('appData'), 'AIAccountManager', 'accounts.json');
     if (existsSync(legacy)) { try { const rows = JSON.parse(readFileSync(legacy, 'utf8')); if (Array.isArray(rows)) accounts.importMetadata(rows); } catch { /* manual import remains available */ } }
@@ -109,7 +134,7 @@ function getPersistentServices(): PersistentServices {
   const media = new MediaService(accounts, settings, (accountId, url) => {
     const browser = activeRuntime?.browser;
     return browser ? browser.resolveBlob(accountId, url) : Promise.reject(new Error('浏览器页面未打开'));
-  }, undefined, join(paths.config, 'download-tasks.json'));
+  }, undefined, join(paths.config, 'download-tasks.json'), join(paths.root, 'preview-cache'));
   const updates = new UpdateService(paths.updates);
   const externalLogin = new ExternalLoginService(join(paths.root, 'external-login'), accounts, settings, proxy);
   const cacheCleaner = new LegacyCacheCleaner({
@@ -117,7 +142,7 @@ function getPersistentServices(): PersistentServices {
     temp: app.getPath('temp'),
     activeDirs: [dirname(process.execPath), app.getAppPath(), process.resourcesPath]
   });
-  persistentServices = { accounts, settings, proxy, fingerprints, plugins, media, updates, externalLogin, cacheCleaner };
+  persistentServices = { accounts, settings, proxy, fingerprints, plugins, media, updates, externalLogin, cacheCleaner, backups };
   return persistentServices;
 }
 
@@ -129,9 +154,8 @@ async function createWindow(): Promise<BrowserWindow> {
     ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#ffffff', symbolColor: '#303746', height: 36 } } : {}),
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    const label = ['debug', 'info', 'warning', 'error'][level] ?? String(level);
-    logger.info(`[renderer:${label}] ${message} (${sourceId}:${line})`);
+  window.webContents.on('console-message', ({ level, message, lineNumber, sourceId }) => {
+    logger.info(`[renderer:${level}] ${message} (${sourceId}:${lineNumber})`);
   });
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     logger.error(`[renderer:did-fail-load] code=${errorCode} description=${errorDescription} url=${validatedURL} mainFrame=${isMainFrame}`);
@@ -140,7 +164,7 @@ async function createWindow(): Promise<BrowserWindow> {
     logger.error(`[renderer:gone] reason=${details.reason} exitCode=${details.exitCode}`);
   });
   const services = getPersistentServices();
-  const { accounts, settings, proxy, fingerprints, plugins, media, updates, externalLogin, cacheCleaner } = services;
+  const { accounts, settings, proxy, fingerprints, plugins, media, updates, externalLogin, cacheCleaner, backups } = services;
   const syncWindowTheme = (theme: 'light' | 'dark'): void => {
     window.setBackgroundColor(theme === 'light' ? '#f3f4f7' : '#30343c');
     if (process.platform === 'win32') window.setTitleBarOverlay({ color: theme === 'light' ? '#ffffff' : '#30343c', symbolColor: theme === 'light' ? '#303746' : '#f3f4f7', height: 36 });
@@ -148,7 +172,18 @@ async function createWindow(): Promise<BrowserWindow> {
   syncWindowTheme(settings.get().theme);
   configureBossKey(window, settings.get());
   const browser = new BrowserManager(window, accounts, settings, proxy, fingerprints, plugins);
+  browser.setResolverDiagnosticSink((message) => logger.info(message));
+  browser.setNetworkDiagnosticSink((level, message) => logger[level](message));
   media.setProgrammaticDownloadMarker((accountId, url) => browser.markProgrammaticDownload(accountId, url));
+  media.setResourceRefresher(async (resource) => {
+    const account = accounts.list().find((item) => item.id === resource.accountId);
+    if (account?.platform === 'dola') {
+      await browser.resolveDolaResource(resource.accountId, resource, false);
+    } else if (account?.platform === 'doubao') {
+      const result = await browser.startDoubaoCreationScan(resource.accountId);
+      if (!result.ok) throw new Error(result.message);
+    } else throw new Error('请在账号页面打开原视频对话后重新捕获素材');
+  });
   const disposeSettingsListener = settings.onChange((value, previous) => {
     configureBossKey(window, value);
     syncWindowTheme(value.theme);
@@ -156,19 +191,16 @@ async function createWindow(): Promise<BrowserWindow> {
   });
   // Match the original application: captured resources are a runtime feed, not a cross-restart archive.
   if (!mediaProtocolInstalled) {
-    protocol.handle('workbench-media', (request) => {
-      const path = activeMedia?.previewPath(request.url);
-      return path ? net.fetch(pathToFileURL(path).href) : new Response('Not found', { status: 404 });
-    });
+    protocol.handle('workbench-media', createMediaProtocolHandler(() => activeMedia));
     mediaProtocolInstalled = true;
   }
   activeMedia = media;
-  browser.setMediaSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; media.add(accountId, resource); });
+  browser.setMediaSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, resource); if (added) void media.materializeBlobPreview(added.id).catch(() => undefined); });
   browser.setSiteDownloadSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, resource); if (added) { media.enqueue(added.id); void media.materializeBlobPreview(added.id).catch(() => undefined); } });
   browser.setNativeDownloadSink((notice) => { if (!window.isDestroyed()) window.webContents.send(channels.filesDownloaded, notice); });
   browser.setNativeDownloadPathResolver((accountId, filename) => media.reserveNativeDownloadPath(accountId, filename), (path) => media.releaseReservedDownloadPath(path));
   const migration = new LegacyMigrationService(window, accounts, join(paths.config, 'accounts.json'), (accountId, bundle) => browser.importStorage(accountId, bundle), settings);
-  const disposeIpc = registerIpc(window, { accounts, browser, media, settings, updates, externalLogin, proxy, fingerprints, migration, plugins, profileLocation, cacheCleaner, requestRestart: () => { app.relaunch(); app.quit(); } });
+  const disposeIpc = registerIpc(window, { accounts, browser, media, settings, updates, externalLogin, proxy, fingerprints, migration, plugins, profileLocation, cacheCleaner, backups, requestRestart: () => { app.relaunch(); app.quit(); } });
   activeRuntime = { browser, externalLogin, proxy, disposeSettingsListener, disposeIpc };
   if (!persistentRuntimeStarted) { persistentRuntimeStarted = true; media.resume(); }
   window.on('closed', () => {

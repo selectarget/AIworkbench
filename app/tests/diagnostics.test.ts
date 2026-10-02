@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { accountSchema, type DownloadTask } from '../src/shared/contracts';
-import { buildDiagnosticsSnapshot, summarizeDownloadTasks } from '../src/main/diagnostics';
+import { buildDiagnosticsSnapshot, summarizeDownloadTasks, redactDiagnosticText } from '../src/main/diagnostics';
 
 const task = (status: DownloadTask['status']): DownloadTask => ({
   id: `task_${status}`,
@@ -15,9 +15,14 @@ const task = (status: DownloadTask['status']): DownloadTask => ({
 });
 
 describe('diagnostics snapshot', () => {
+  it('removes credentials, signed URL paths and Windows usernames from exported errors', () => {
+    const text = redactDiagnosticText('HTTP 403 https://user:secret@cdn.example/private/video.mp4?token=signed Cookie=secret C:\\Users\\alice\\data');
+    expect(text).not.toContain('alice'); expect(text).not.toContain('secret'); expect(text).not.toContain('signed'); expect(text).not.toContain('/private');
+    expect(text).toContain('cdn.example');
+  });
   it('summarizes every download task state', () => {
-    const result = summarizeDownloadTasks(['queued', 'running', 'running', 'completed', 'failed', 'cancelled'].map(task));
-    expect(result).toEqual({ queued: 1, running: 2, completed: 1, failed: 1, cancelled: 1 });
+    const result = summarizeDownloadTasks(['queued', 'running', 'running', 'paused', 'completed', 'failed', 'cancelled'].map(task));
+    expect(result).toEqual({ queued: 1, running: 2, paused: 1, completed: 1, failed: 1, cancelled: 1 });
   });
 
   it('reports isolated account state without secrets', () => {

@@ -5,6 +5,7 @@ import type { Account, BatchLoginPlatform, BrowserDiagnostic, DolaResourceRefere
 import { channels } from '../shared/channels';
 import { adapters, responsePatchHeaders } from './adapters';
 import { parseMediaPayload } from './media-parser';
+import { installSiteRequestCompatibility } from './site-request-compatibility';
 import type { AccountService } from './accounts';
 import type { SettingsService } from './settings';
 import { buildProxyRules } from './proxy-rules';
@@ -21,6 +22,8 @@ import { buildDolaReferenceInputDispatchScript, buildDolaReferenceInputPreparati
 import { normalizeNavigationUrl } from './path-utils';
 import { mediaTypeFromExtension, mediaTypeFromMimeType } from './media-formats';
 import { clearSessionData } from './session-cleanup';
+import { WebSocketDiagnosticTracker } from './network-diagnostics';
+import { setMediaRequestProxyAuth } from './media-request';
 
 type Entry = { view: WebContentsView; accountId: string };
 type OpeningTask = { promise: Promise<void>; cancelled: boolean };
@@ -245,6 +248,9 @@ export class BrowserManager {
   private readonly recovering = new Set<string>();
   private readonly dolaResolver = new DolaVideoResolver();
   private readonly resolvedDolaFallbackApis = new Set<string>();
+  private readonly resolvingDolaFallbackApis = new Map<string, symbol>();
+  private resolverDiagnosticSink: ((message: string) => void) | null = null;
+  private networkDiagnosticSink: ((level: 'info' | 'warn', message: string) => void) | null = null;
   /**
    * Extensions belong to the persistent Session, not to a single
    * WebContentsView. Keep their ids so a platform switch can unload the old
@@ -278,6 +284,8 @@ export class BrowserManager {
     this.disposePluginListener = plugins?.onChange(() => { void this.syncCustomExtensions(); }) ?? null;
   }
   setMediaSink(sink: (accountId: string, resource: unknown) => void): void { this.mediaSink = sink; }
+  setResolverDiagnosticSink(sink: (message: string) => void): void { this.resolverDiagnosticSink = sink; }
+  setNetworkDiagnosticSink(sink: (level: 'info' | 'warn', message: string) => void): void { this.networkDiagnosticSink = sink; }
   setSiteDownloadSink(sink: (accountId: string, resource: unknown) => void): void { this.siteDownloadSink = sink; }
   setNativeDownloadSink(sink: (notice: NativeDownloadNotice) => void): void { this.nativeDownloadSink = sink; }
   setNativeDownloadPathResolver(resolvePath: (accountId: string, filename: string) => string, releasePath?: (path: string) => void): void { this.nativeDownloadPathResolver = resolvePath; this.nativeDownloadPathRelease = releasePath ?? null; }
@@ -293,6 +301,8 @@ export class BrowserManager {
     this.disposePluginListener?.();
     this.builtInExtensionIds.clear();
     this.networkResponses.clear();
+    this.resolvingDolaFallbackApis.clear();
+    this.resolvedDolaFallbackApis.clear();
     this.programmaticDownloadGuard.clear();
   }
 
@@ -316,6 +326,9 @@ export class BrowserManager {
     if (this.entries.has(accountId)) return;
     const pending = this.opening.get(accountId);
     if (pending) return pending.promise;
+    const limit = this.settings.get().maxOpenAccounts ?? 20;
+    const allocated = new Set([...this.entries.keys(), ...this.opening.keys()]);
+    if (allocated.size >= limit) throw new Error(`已达到同时运行 ${limit} 个账号的上限，请关闭闲置标签或在设置中调整`);
     const state: OpeningTask = { promise: Promise.resolve(), cancelled: false };
     const task = this.createView(accountId, state);
     state.promise = task;
@@ -424,6 +437,8 @@ export class BrowserManager {
   }
 
   close(accountId: string): void {
+    for (const key of this.resolvingDolaFallbackApis.keys()) if (key.startsWith(`${accountId}:`)) this.resolvingDolaFallbackApis.delete(key);
+    for (const key of this.resolvedDolaFallbackApis) if (key.startsWith(`${accountId}:`)) this.resolvedDolaFallbackApis.delete(key);
     const pending = this.opening.get(accountId);
     if (pending) {
       pending.cancelled = true;
@@ -1158,6 +1173,10 @@ export class BrowserManager {
     return join(app.isPackaged ? process.resourcesPath : process.cwd(), 'site-assets', ...parts);
   }
   private configureSession(account: Account, ses: Electron.Session): void {
+    const requestSettings = this.settings;
+    installSiteRequestCompatibility(ses, () => requestSettings.get().blockedSiteRequestCompatibility, this.networkDiagnosticSink ?? undefined);
+    const accounts = this.accounts; const accountId = account.id;
+    setMediaRequestProxyAuth(ses, (host, port) => resolveProxyCredentials(accounts.list(), accountId, true, host, port));
     const fallbackFingerprint = createFingerprintProfile(account.platform, account.fingerprint.seed || account.id);
     const fingerprint = adaptFingerprintProfile(account.platform, account.fingerprint.userAgent ? account.fingerprint : fallbackFingerprint);
     ses.setUserAgent(fingerprint.userAgent, fingerprint.languages.join(','));
@@ -1299,7 +1318,9 @@ export class BrowserManager {
       await view.webContents.debugger.sendCommand('Network.enable', { maxTotalBufferSize: 50_000_000, maxResourceBufferSize: 15_000_000 });
       const patchEnabled = settings.experimentalResponsePatchEnabled && adapter.patchResponse && adapter.fetchPatterns.length;
       if (patchEnabled) await view.webContents.debugger.sendCommand('Fetch.enable', { patterns: adapter.fetchPatterns });
+      const sockets = new WebSocketDiagnosticTracker(account.id, (level, message) => this.networkDiagnosticSink?.(level, message));
       view.webContents.debugger.on('message', async (_event, method, params) => {
+        sockets.record(method, params);
         if (this.settings.get().disabledAdapters.includes(account.platform)) { if (method === 'Fetch.requestPaused') try { await view.webContents.debugger.sendCommand('Fetch.continueRequest', { requestId: String(params.requestId) }); } catch { /* page closed */ } return; }
         if (method === 'Fetch.requestPaused') await this.patchPausedResponse(adapter, view, params);
         if (method === 'Network.responseReceived') {
@@ -1316,7 +1337,7 @@ export class BrowserManager {
             if (body.length > 15_000_000) return;
             const responseUrl = pending.url;
             for (const resource of (adapter.parseResponse?.(responseUrl, body) ?? parseMediaPayload(body, `cdp:${pending.platform}`))) this.mediaSink?.(pending.accountId, resource);
-            if (pending.platform === 'dola') void this.resolveDolaFallbacks(pending.accountId, body, dolaFallbackReferer(responseUrl));
+            if (pending.platform === 'dola' || pending.platform === 'doubao') void this.resolveDolaFallbacks(pending.accountId, body, pending.platform === 'doubao' ? 'https://www.doubao.com/' : dolaFallbackReferer(responseUrl), pending.platform);
           } catch { /* streaming and cached bodies may be unavailable */ }
         }
         if (method === 'Network.loadingFailed') this.networkResponses.delete(`${view.webContents.id}:${String(params.requestId)}`);
@@ -1336,18 +1357,28 @@ export class BrowserManager {
       } catch { /* did-finish-load injection below remains the safe fallback. */ }
     }
   }
-  private async resolveDolaFallbacks(accountId: string, body: string, referer: string): Promise<void> {
+  private async resolveDolaFallbacks(accountId: string, body: string, referer: string, platform: 'dola' | 'doubao' = 'dola'): Promise<void> {
     const target = session.fromPartition(`persist:account_${accountId}`);
     for (const fallbackApi of extractDolaFallbackApis(body)) {
-      const key = `${accountId}:${fallbackApi}`; if (this.resolvedDolaFallbackApis.has(key)) continue;
+      const key = `${accountId}:${fallbackApi}`;
+      if (this.resolvedDolaFallbackApis.has(key) || this.resolvingDolaFallbackApis.has(key)) continue;
+      const operation = Symbol(); this.resolvingDolaFallbackApis.set(key, operation);
       try {
         const resolved = await this.dolaResolver.resolve(fallbackApi, target, referer);
+        if (this.resolvingDolaFallbackApis.get(key) !== operation) continue;
         // Only suppress future attempts after a successful resolution. A
         // transient HTTP/token failure should be retryable when the page
         // exposes the same fallback API again.
         this.resolvedDolaFallbackApis.add(key);
-        this.mediaSink?.(accountId, { type: 'video', url: resolved.videoUrl, alternateUrls: resolved.alternateUrls, thumbUrl: resolved.posterUrl || undefined, title: 'Dola 原视频', source: 'dola-video-fallback-api', confirmedNoWatermark: true, resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api' });
-      } catch { /* The page may return a token format not supported by this resolver. */ }
+        this.resolverDiagnosticSink?.(`[video-resolver] platform=${platform} account=${accountId} result=resolved host=${new URL(resolved.videoUrl).hostname}`);
+        let vid: string | undefined;
+        try { const query = new URL(fallbackApi).searchParams; vid = query.get('video_id') || query.get('vid') || undefined; } catch { /* extractor already validates the URL */ }
+        this.mediaSink?.(accountId, { type: 'video', url: resolved.videoUrl, alternateUrls: resolved.alternateUrls, thumbUrl: resolved.posterUrl || undefined, vid, title: platform === 'doubao' ? '豆包原视频' : 'Dola 原视频', source: `${platform}-video-fallback-api`, confirmedNoWatermark: true, resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api' });
+      } catch (error) {
+        if (this.resolvingDolaFallbackApis.get(key) !== operation) continue;
+        const message = (error instanceof Error ? error.message : String(error)).replace(/https?:\/\/\S+/g, '[URL]');
+        this.resolverDiagnosticSink?.(`[video-resolver] platform=${platform} account=${accountId} result=failed error=${message}`);
+      } finally { if (this.resolvingDolaFallbackApis.get(key) === operation) this.resolvingDolaFallbackApis.delete(key); }
     }
   }
   private async patchPausedResponse(adapter: typeof adapters[keyof typeof adapters], view: WebContentsView, params: Record<string, any>): Promise<void> {

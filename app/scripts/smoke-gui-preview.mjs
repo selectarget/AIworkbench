@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const root = resolve(process.cwd());
 const userDataPath = mkdtempSync(join(tmpdir(), 'aiam-gui-preview-'));
@@ -111,6 +111,7 @@ const resources = [
     alternateUrls: ['https://cdn.example.com/workbench-alternate.png'],
     previewUrl: svgPreview,
     previewThumbUrl: svgPreview,
+    previewCached: true,
     title: '跨平台素材预览',
     width: 640,
     height: 360,
@@ -123,18 +124,11 @@ const resources = [
     capturedAt: now
   },
   {
-    id: 'gui-resource-2',
-    type: 'video',
-    url: '',
-    title: '待解析视频资源',
-    source: 'Dola fixture',
-    accountId: accounts[1].id,
-    capturedAt: now
-  },
-  {
     id: 'gui-resource-3',
     type: 'video',
     url: 'https://cdn.example.com/workbench-video.mp4?lr=video_gen_no_watermark',
+    backupUrl: 'https://cdn.example.com/workbench-video-backup.mp4',
+    alternateUrls: ['https://cdn.example.com/workbench-video-alternate.mp4'],
     previewUrl: svgPreview,
     previewThumbUrl: svgPreview,
     title: 'V5.2 视频通道预览',
@@ -142,7 +136,17 @@ const resources = [
     accountId: accounts[0].id,
     capturedAt: now,
     confirmedNoWatermark: true,
-    qualityEvidence: 'platform-api'
+    qualityEvidence: 'platform-api',
+    rejectedCandidates: ['https://cdn.example.com/expired-candidate.png']
+  },
+  {
+    id: 'gui-resource-2',
+    type: 'video',
+    url: '',
+    title: '待解析视频资源',
+    source: 'Dola fixture',
+    accountId: accounts[1].id,
+    capturedAt: now
   }
 ];
 
@@ -259,6 +263,7 @@ async function main() {
       dolaTask: () => ok({}), setDoubaoDuration: () => ok({}), sendDoubao15sPrompt: () => ok({}), startDoubaoCreationScan: () => ok({}), startJimengOriginal: () => ok({})
     };
     const mediaApi = {
+      pause: () => ok(undefined), resumeTask: () => ok({}), preparePreview: (id) => ok(state.resources.find((resource) => resource.id === id)), refresh: (id) => ok(state.resources.find((resource) => resource.id === id)),
       list: () => ok(state.resources), tasks: () => ok(state.tasks), clear: () => ok(undefined), cancel: () => ok(undefined), retry: () => ok(undefined),
       download: () => ok({}), downloadMany: () => ok([]), selectCandidate: (resourceId, url) => { const resource = state.resources.find((item) => item.id === resourceId); if (!resource) return ok(null); const candidates = [resource.url, resource.backupUrl, ...(resource.alternateUrls || [])].filter(Boolean); const selectedIndex = candidates.indexOf(url); if (selectedIndex < 0) return ok(resource); const remaining = candidates.filter((candidate) => candidate !== url); return ok({ ...resource, url, backupUrl: remaining[0] || undefined, alternateUrls: remaining.slice(1) }); }, convertForPreview: () => ok({ url: '', cached: false }), toolStatus: () => ok({ available: true, path: 'fixture/ffmpeg', version: '6.0', packaged: false, message: 'GUI fixture FFmpeg' }), onUpdated: no, onTasks: (listener) => { taskListeners.push(listener); return () => { const index = taskListeners.indexOf(listener); if (index >= 0) taskListeners.splice(index, 1); }; }, onVideoGenerated: (listener) => { videoGeneratedListeners.push(listener); return () => { const index = videoGeneratedListeners.indexOf(listener); if (index >= 0) videoGeneratedListeners.splice(index, 1); }; }
     };
@@ -334,7 +339,7 @@ async function main() {
         // unchanged - image parsing defaults off and the switch round-trips through
         // settings.update - but it is asserted where the control is, and the batch row
         // underneath is checked to prove the setting actually reaches the panel.
-        const imageBatchButton = () => [...document.querySelectorAll('.media-batch button')].some((node) => node.textContent?.trim() === '下载全部图片');
+        const imageBatchButton = () => Boolean(document.querySelector('.material-tabs button[data-parse-images="true"]'));
         const imageSwitch = document.querySelector('[role="switch"][aria-label="图片解析"]');
         if (!imageSwitch) throw new Error('image parsing switch is missing from 设置');
         if (imageSwitch.getAttribute('aria-checked') !== 'false') throw new Error('image parsing must default off');
@@ -354,6 +359,10 @@ async function main() {
         const pluginNav = [...document.querySelectorAll('.settings-nav button')].find((node) => node.textContent?.trim() === '插件');
         pluginNav?.click();
         await waitFor(() => pluginNav?.classList.contains('active') === true, 'settings section navigation did not activate');
+        await waitFor(() => [...document.querySelectorAll('.settings-list > *')].filter((node) => getComputedStyle(node).display !== 'none').every((node) => node.dataset.settingsSection === 'plugins'), 'settings showed other sections while plugins was selected');
+        const backupNav = [...document.querySelectorAll('.settings-nav button')].find((node) => node.textContent?.trim() === '备份');
+        backupNav?.click();
+        await waitFor(() => [...document.querySelectorAll('.settings-list > *')].some((node) => node.dataset.settingsSection === 'backup' && getComputedStyle(node).display !== 'none'), 'backup section did not render');
       }
       await closeModal();
       return buttonLabel;
@@ -460,8 +469,10 @@ async function main() {
     // Asserting their absence is the point of the merge - a regression that reintroduces a
     // fake choice should fail here, not pass silently.
     if (document.querySelector('.media-channel')) throw new Error('the merged-away channel download buttons came back');
-    if (!document.querySelector('.media-download-main') || !document.querySelector('.media-preview-action')) throw new Error('V5.2 download actions did not render');
-    const candidateButton = [...document.querySelectorAll('.media-card button')].find((node) => node.textContent?.trim() === '候选地址 3');
+    if (!document.querySelector('.material-actions .primary') || !document.querySelector('.material-preview-button')) throw new Error('material download and preview actions did not render');
+    document.querySelector('.material-more')?.click();
+    await waitFor(() => Boolean(document.querySelector('.material-more-actions')), 'material menu did not open');
+    const candidateButton = [...document.querySelectorAll('.material-card button')].find((node) => node.textContent?.trim() === '候选地址');
     if (!candidateButton) throw new Error('media candidate selector did not render');
     candidateButton.click();
     await waitFor(() => Boolean(document.querySelector('.candidate-list')), 'media candidate modal did not open');
@@ -533,7 +544,7 @@ async function main() {
       lightTheme,
       accountCards: document.querySelectorAll('.account-card').length,
       accountCardsVisible,
-      mediaCards: document.querySelectorAll('.media-card').length,
+      mediaCards: document.querySelectorAll('.material-card').length,
       columns: { accounts: visible('.accounts-panel'), browser: visible('.browser-panel'), media: visible('.media-panel') },
       toolbarMenuItems,
       modalChecks,
@@ -568,10 +579,61 @@ async function main() {
   if (!result.themeRestored || result.lightTheme !== 'light') throw new Error(`white theme did not remain enabled: ${JSON.stringify(result)}`);
 
   await new Promise((resolve) => setTimeout(resolve, 500));
+  await window.webContents.executeJavaScript(`document.querySelectorAll('.video-notice-actions button:last-child').forEach(button => button.click());document.querySelectorAll('.material-more[aria-expanded="true"]').forEach(button=>button.click()); new Promise(resolve => setTimeout(resolve, 300));`);
+  await window.webContents.capturePage();
+  await new Promise((resolve) => setTimeout(resolve, 150));
   const image = await window.webContents.capturePage();
   writeFileSync(previewPath, image.toPNG());
   console.log(`gui preview ok: ${JSON.stringify(result)}`);
   console.log(`gui preview image: ${previewPath}`);
+  await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === '设置')?.click(); new Promise(resolve => setTimeout(resolve, 150));`);
+  await window.webContents.executeJavaScript(`new Promise((resolve, reject) => { let count=0; const timer=setInterval(()=>{ const button=Array.from(document.querySelectorAll('.settings-nav button')).find(button=>button.textContent.trim()==='下载');if(button){clearInterval(timer);button.click();setTimeout(resolve,400);}else if(count++>50){clearInterval(timer);reject(new Error('settings navigation missing'));}},50); });`);
+  const settingsImage = join(dirname(previewPath), `settings-${previewWidth}.png`);
+  const activeSettings = await window.webContents.executeJavaScript(`document.querySelector('.settings-nav button.active')?.textContent.trim()`);
+  if (activeSettings !== '下载') throw new Error('download settings screenshot was not on the correct section: ' + activeSettings);
+  await window.webContents.capturePage();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  writeFileSync(settingsImage, (await window.webContents.capturePage()).toPNG());
+  console.log(`settings preview image: ${settingsImage}`);
+
+  await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.settings-nav button')).find(button => button.textContent.trim() === '插件')?.click(); new Promise(resolve => setTimeout(resolve, 300));`);
+  const pluginsImage = join(dirname(previewPath), `settings-plugins-${previewWidth}.png`);
+  await window.webContents.capturePage();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  writeFileSync(pluginsImage, (await window.webContents.capturePage()).toPNG());
+  console.log(`plugins preview image: ${pluginsImage}`);
+
+  // Close settings modal
+  await window.webContents.executeJavaScript(`(document.querySelector('.modal header button[aria-label="关闭弹窗"]') || document.querySelector('.modal header button'))?.click(); new Promise(resolve => setTimeout(resolve, 400));`);
+
+  // Open Video Preview (first card on videos tab)
+  await window.webContents.executeJavaScript(`document.querySelector('.material-card .material-actions button')?.click(); new Promise(resolve => setTimeout(resolve, 500));`);
+  const videoPreviewImage = join(dirname(previewPath), `preview-video-${previewWidth}.png`);
+  await window.webContents.capturePage();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  writeFileSync(videoPreviewImage, (await window.webContents.capturePage()).toPNG());
+  console.log(`video preview image: ${videoPreviewImage}`);
+
+  // Close video preview modal
+  await window.webContents.executeJavaScript(`(document.querySelector('.modal header button[aria-label="关闭弹窗"]') || document.querySelector('.modal header button'))?.click(); new Promise(resolve => setTimeout(resolve, 400));`);
+
+  // Switch to 图片 tab
+  await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.material-tabs button')).find(b => b.textContent.includes('图片'))?.click(); new Promise(resolve => setTimeout(resolve, 400));`);
+
+  // Open Image Preview (first card on images tab)
+  await window.webContents.executeJavaScript(`document.querySelector('.material-card .material-actions button')?.click(); new Promise(resolve => setTimeout(resolve, 500));`);
+  const imagePreviewImage = join(dirname(previewPath), `preview-image-${previewWidth}.png`);
+  await window.webContents.capturePage();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  writeFileSync(imagePreviewImage, (await window.webContents.capturePage()).toPNG());
+  console.log(`image preview image: ${imagePreviewImage}`);
+
+  // Close image preview modal
+  await window.webContents.executeJavaScript(`(document.querySelector('.modal header button[aria-label="关闭弹窗"]') || document.querySelector('.modal header button'))?.click(); new Promise(resolve => setTimeout(resolve, 400));`);
+
+  // Switch back to 视频 tab
+  await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.material-tabs button')).find(b => b.textContent.includes('视频'))?.click(); new Promise(resolve => setTimeout(resolve, 300));`);
+
   try { window.webContents.debugger.detach(); } catch {}
   window.destroy();
   removeUserDataLater();

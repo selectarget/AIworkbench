@@ -3,11 +3,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writ
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { z, type ZodType } from 'zod';
 import { channels } from '../shared/channels';
-import { accountInputSchema, dolaAspectRatioSchema, dolaResourceReferenceSchema, fingerprintSchema, libraryQuerySchema, settingsSchema, videoGeneratedNoticeSchema, type ApiResult, type ExternalBrowserLayout, type ViewLayout } from '../shared/contracts';
+import { accountInputSchema, batchCreateAccountsSchema, dolaAspectRatioSchema, dolaResourceReferenceSchema, fingerprintSchema, libraryQuerySchema, settingsSchema, videoGeneratedNoticeSchema, type ApiResult, type ExternalBrowserLayout, type ViewLayout } from '../shared/contracts';
 import { platforms } from '../shared/platforms';
 import type { AccountService } from './accounts';
 import type { BrowserManager } from './browser-manager';
 import { captureModeAccepts } from './media';
+import { settingsPatchSchema } from '../shared/contracts';
 import type { MediaService } from './media';
 import type { SettingsService } from './settings';
 import type { UpdateService } from './updates';
@@ -19,10 +20,11 @@ import type { LegacyMigrationService } from './migration';
 import type { PluginService } from './plugins';
 import type { ProfileLocationService } from './data';
 import type { LegacyCacheCleaner } from './cache-cleaner';
-import { buildDiagnosticsSnapshot } from './diagnostics';
+import { buildDiagnosticsSnapshot, supportReport } from './diagnostics';
+import type { ConfigBackupService } from './config-backup';
 import { normalizeExternalHttpUrl } from './path-utils';
 
-type Services = { accounts: AccountService; browser: BrowserManager; media: MediaService; settings: SettingsService; updates: UpdateService; externalLogin: ExternalLoginService; proxy: ProxyService; fingerprints: FingerprintService; migration: LegacyMigrationService; plugins: PluginService; profileLocation: ProfileLocationService; cacheCleaner: LegacyCacheCleaner; requestRestart: () => void };
+type Services = { accounts: AccountService; browser: BrowserManager; media: MediaService; settings: SettingsService; updates: UpdateService; externalLogin: ExternalLoginService; proxy: ProxyService; fingerprints: FingerprintService; migration: LegacyMigrationService; plugins: PluginService; profileLocation: ProfileLocationService; cacheCleaner: LegacyCacheCleaner; backups: ConfigBackupService; requestRestart: () => void };
 const idSchema = z.string().min(6).max(80);
 const layoutSchema = z.object({ occluded: z.boolean().optional(), primary: z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }), secondary: z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }).optional() });
 const externalBrowserLayoutSchema = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().int().min(320).max(10_000), height: z.number().int().min(240).max(10_000) });
@@ -59,9 +61,10 @@ function register<T>(window: BrowserWindow, channel: string, schema: ZodType<T>,
 export function registerIpc(window: BrowserWindow, services: Services): () => void {
   activeIpcDisposer?.();
   const eventDisposers: Array<() => void> = [];
-  const { accounts, browser, media, settings, updates, externalLogin, proxy, fingerprints, migration, plugins, profileLocation, cacheCleaner, requestRestart } = services;
+  const { accounts, browser, media, settings, updates, externalLogin, proxy, fingerprints, migration, plugins, profileLocation, cacheCleaner, requestRestart, backups } = services;
   register(window, channels.accountsList, z.undefined(), () => accounts.list());
   register(window, channels.accountsCreate, accountInputSchema, (value) => accounts.create(value));
+  register(window, channels.accountsBatchCreate, batchCreateAccountsSchema, (value) => accounts.batchCreate(value));
   register(window, channels.accountsUpdate, z.object({ id: idSchema, patch: accountInputSchema.partial() }), ({ id, patch }) => accounts.update(id, patch));
   register(window, channels.accountsRemove, idSchema, async (id) => { await externalLogin.removeAccount(id); await browser.removeAccountSession(id); accounts.remove(id); });
   register(window, channels.accountsRemoveMany, z.array(idSchema).min(1), async (ids) => { for (const id of [...new Set(ids)]) { await externalLogin.removeAccount(id); await browser.removeAccountSession(id); accounts.remove(id); } });
@@ -146,8 +149,15 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
   register(window, channels.mediaClear, z.undefined(), () => { media.clear(); });
   register(window, channels.mediaDownload, z.string(), (id) => media.enqueue(id));
   register(window, channels.mediaDownloadMany, z.array(z.string()).min(1), (ids) => media.enqueueMany(ids));
-  register(window, channels.mediaSelectCandidate, z.object({ resourceId: z.string().min(1).max(200), url: z.string().trim().min(1).max(16_384) }), ({ resourceId, url }) => media.selectCandidate(resourceId, url));
+  register(window, channels.mediaSelectCandidate, z.object({ resourceId: z.string().min(1).max(200), url: z.string().trim().min(1).max(16_384) }), async ({ resourceId, url }) => {
+    const updated = media.selectCandidate(resourceId, url);
+    return await media.materializeBlobPreview(updated.id) || updated;
+  });
   register(window, channels.mediaTasks, z.undefined(), () => media.tasks());
+  register(window, channels.mediaPause, z.string(), (id) => media.pause(id));
+  register(window, channels.mediaResume, z.string(), (id) => media.resumeTask(id));
+  register(window, channels.mediaPreparePreview, z.string(), (id) => media.preparePreview(id));
+  register(window, channels.mediaRefresh, z.string(), (id) => media.refreshResource(id));
   register(window, channels.mediaCancel, z.string(), (id) => media.cancel(id));
   register(window, channels.mediaRetry, z.string(), (id) => media.retry(id));
   register(window, channels.mediaClearFailed, z.undefined(), () => { media.clearFailed(); });
@@ -228,7 +238,7 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
     window.webContents.startDrag({ file: safe, icon });
   });
   register(window, channels.settingsGet, z.undefined(), () => settings.get());
-  register(window, channels.settingsUpdate, settingsSchema.partial(), (patch) => settings.update(patch));
+  register(window, channels.settingsUpdate, settingsPatchSchema, (patch) => settings.update(patch));
   register(window, channels.profileLocationGet, z.undefined(), () => profileLocation.get());
   register(window, channels.profileLocationChoose, z.undefined(), async () => {
     const current = profileLocation.get();
@@ -251,6 +261,34 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
     accounts: accounts.list(), browser: browser.diagnostics(), proxy: accounts.list().map((account) => proxy.runtimeStatus(account.id)), resources: media.list(), tasks: media.tasks(), pluginCount: plugins.list().length, disabledAdapters: settings.get().disabledAdapters
   }));
   register(window, channels.platforms, z.undefined(), () => Object.values(platforms));
+  register(window, channels.diagnosticsExport, z.undefined(), async () => {
+    const result = await dialog.showSaveDialog(window, { title: '导出脱敏诊断报告', defaultPath: `工作台诊断-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: '诊断报告', extensions: ['json'] }] });
+    if (result.canceled || !result.filePath) return null;
+    const snapshot = buildDiagnosticsSnapshot({ appVersion: app.getVersion(), electronVersion: process.versions.electron ?? 'unknown', platform: process.platform, arch: process.arch, packaged: app.isPackaged, accounts: accounts.list(), browser: browser.diagnostics(), proxy: accounts.list().map((account) => proxy.runtimeStatus(account.id)), resources: media.list(), tasks: media.tasks(), pluginCount: plugins.list().length, disabledAdapters: settings.get().disabledAdapters });
+    writeFileSync(result.filePath, JSON.stringify(supportReport(snapshot, media.list(), media.tasks()), null, 2), 'utf8');
+    return result.filePath;
+  });
+  register(window, channels.configExport, z.undefined(), async () => {
+    const result = await dialog.showSaveDialog(window, { title: '备份账号配置与设置', defaultPath: `工作台配置-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: '配置备份', extensions: ['json'] }] });
+    if (result.canceled || !result.filePath) return null;
+    backups.save(result.filePath); return result.filePath;
+  });
+  register(window, channels.configOpenBackups, z.undefined(), async () => {
+    backups.automatic(); const error = await shell.openPath(backups.folder); if (error) throw new Error(error);
+  });
+  register(window, channels.configRestore, z.undefined(), async () => {
+    const result = await dialog.showOpenDialog(window, { title: '选择工作台配置备份', properties: ['openFile'], filters: [{ name: '配置备份', extensions: ['json'] }] });
+    if (result.canceled || !result.filePaths[0]) return { restored: false, accountCount: 0 };
+    const backup = backups.read(result.filePaths[0]);
+    const answer = await dialog.showMessageBox(window, { type: 'question', title: '恢复配置', message: `恢复 ${backup.accounts.length} 个账号配置及工作台设置？`, detail: '同 ID 的账号配置将更新，其他账号保留。当前网页会关闭，登录数据和已下载文件保留；恢复前会自动备份。备份不包含登录会话。', buttons: ['取消', '恢复配置'], defaultId: 0, cancelId: 0 });
+    if (answer.response !== 1) return { restored: false, accountCount: 0 };
+    backups.automatic('before-restore');
+    externalLogin.closeAll();
+    browser.closeMany(accounts.list().map((account) => account.id));
+    const accountCount = accounts.restoreConfiguration(backup.accounts);
+    settings.update({ ...backup.settings, openTabs: [], activeTabId: null, secondaryTabId: null, dualView: false });
+    return { restored: true, accountCount };
+  });
   register(window, channels.pluginsList, z.undefined(), () => plugins.list());
   register(window, channels.pluginsImportPackage, z.undefined(), async () => {
     const result = await dialog.showOpenDialog(window, { title: '导入浏览器插件', properties: ['openFile'], filters: [{ name: '插件包', extensions: ['zip', 'crx'] }] });

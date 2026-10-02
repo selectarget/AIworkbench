@@ -14,9 +14,14 @@ import type { SettingsService } from './settings';
 import { isPathInside, mediaTypeFromPath, sanitizeFilename } from './path-utils';
 import { canonicalMediaExtension, extensionFromMimeType, mediaExtensionFromSignature, mediaTypeFromExtension } from './media-formats';
 import { AtomicStore } from './atomic-store';
+import { PreviewCache } from './preview-cache';
+import { fetchAccountMedia, setMediaRequestCooldown } from './media-request';
+import { MediaHttpError, retryDelay, shouldRetryDownload, waitForRetry } from './download-policy';
+import { isDoubaoPlaybackStream, supersededDoubaoPlayback } from '../shared/media-quality';
 
 type BlobResolver = (accountId: string, url: string) => Promise<Buffer>;
 type ProgrammaticDownloadMarker = (accountId: string, url: string) => void;
+type ResourceRefresher = (resource: MediaResource) => Promise<void>;
 
 export function captureModeAccepts(mode: AppSettings['captureMode'], raw: unknown): boolean {
   if (mode === 'all') return true;
@@ -27,23 +32,69 @@ export class MediaService {
   private resources = new Map<string, MediaResource>();
   private taskMap = new Map<string, DownloadTask>();
   private readonly aborters = new Map<string, AbortController>();
+  private readonly pausedTasks = new Set<string>();
+  private readonly progressUpdates = new Map<string, number>();
+  private refresher: ResourceRefresher | null = null;
+  private readonly refreshJobs = new Map<string, Promise<MediaResource>>();
+  private readonly prepareJobs = new Map<string, Promise<MediaResource>>();
+  private readonly coverJobs = new Map<string, Promise<void>>();
+  private readonly cache: PreviewCache;
   private readonly previewTokens = new Map<string, string>();
+  private readonly remotePreviewTokens = new Map<string, { accountId: string; url: string; resourceId?: string; thumbnail?: boolean }>();
   private readonly conversionJobs = new Map<string, Promise<PreviewConversionResult>>();
   private readonly blobPreviewJobs = new Map<string, Promise<MediaResource | null>>();
   private readonly blobPreviewPaths = new Set<string>();
   private running = 0;
+  private readonly runningByAccount = new Map<string, number>();
+  private readonly accountCooldowns = new Map<string, number>();
+  private cooldownTimer?: ReturnType<typeof setTimeout>;
   private taskListener: ((tasks: DownloadTask[]) => void) | null = null;
   private resourceListener: ((resources: MediaResource[]) => void) | null = null;
   private readonly taskStore?: AtomicStore<DownloadTask[]>;
   private readonly pendingCovers = new Map<string, MediaResource[]>();
   private programmaticDownloadMarker: ProgrammaticDownloadMarker | null = null;
-  constructor(private readonly accounts: AccountService, private readonly settings: SettingsService, private readonly resolveBlob?: BlobResolver, _indexFile?: string, tasksFile?: string) {
+  constructor(private readonly accounts: AccountService, private readonly settings: SettingsService, private readonly resolveBlob?: BlobResolver, _indexFile?: string, tasksFile?: string, cacheRoot?: string) {
+    this.cache = new PreviewCache(cacheRoot || join(tmpdir(), 'ai-creation-workbench', 'media-cache'));
     if (tasksFile) { this.taskStore = new AtomicStore(tasksFile, z.array(downloadTaskSchema), []); const restored = this.taskStore.read().map((task) => task.status === 'running' ? { ...task, status: 'failed' as const, error: '应用上次在下载过程中退出' } : task); this.taskMap = new Map(restored.map((item) => [item.id, item])); this.persistTasks(); }
+    for (const task of this.taskMap.values()) {
+      const until = Date.parse(task.retryAfter ?? '');
+      if (until > Date.now()) {
+        this.accountCooldowns.set(task.accountId, Math.max(this.accountCooldowns.get(task.accountId) ?? 0, until));
+        setMediaRequestCooldown(session.fromPartition(`persist:account_${task.accountId}`), until);
+      }
+    }
   }
 
   setProgrammaticDownloadMarker(marker: ProgrammaticDownloadMarker | null): void {
     this.programmaticDownloadMarker = marker;
   }
+
+  setResourceRefresher(refresher: ResourceRefresher | null): void { this.refresher = refresher; }
+
+  async refreshResource(resourceId: string): Promise<MediaResource> {
+    const existing = this.refreshJobs.get(resourceId);
+    if (existing) return existing;
+    const job = this.refreshResourceNow(resourceId);
+    this.refreshJobs.set(resourceId, job);
+    try { return await job; } finally { this.refreshJobs.delete(resourceId); }
+  }
+
+  private async refreshResourceNow(resourceId: string): Promise<MediaResource> {
+    const resource = this.resources.get(resourceId);
+    if (!resource) throw new Error('素材不存在，请打开生成视频的对话重新捕获');
+    if (!this.refresher) throw new Error('请打开生成视频的账号页面后重新解析');
+    const previousVersion = this.resourceVersions.get(resourceId) ?? 0;
+    await this.refresher(resource);
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const updated = this.resources.get(resourceId);
+      if (!updated) throw new Error('素材已清空');
+      if ((this.resourceVersions.get(resourceId) ?? 0) > previousVersion && updated.url) return updated;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    throw new Error('未获取到新地址，请在对应账号打开原视频对话后重试');
+  }
+
+  private readonly resourceVersions = new Map<string, number>();
 
   onTasks(listener: (tasks: DownloadTask[]) => void): () => void {
     this.taskListener = listener;
@@ -70,6 +121,9 @@ export class MediaService {
     const parsed = mediaResourceSchema.safeParse({ ...value, url, id: provisionalId, accountId, capturedAt: new Date().toISOString(), source: String(value.source ?? 'remote-preload'), expiresAt: normalizeDate(value.expiresAt ?? value.expires_at) });
     if (!parsed.success) return null;
     let candidate = parsed.data;
+    if (account.platform === 'doubao' && candidate.type === 'video' && isDoubaoPlaybackStream(candidate.url) && candidate.source !== 'doubao-video-fallback-api') {
+      candidate = { ...candidate, confirmedNoWatermark: false, qualityEvidence: 'platform-api', resolutionMethod: 'doubao-playback-stream' };
+    }
     if (/generic-(?:dom|performance)|dom-fallback/i.test(candidate.source)) {
       candidate = { ...candidate, confirmedNoWatermark: false, qualityEvidence: 'dom-direct', resolutionMethod: candidate.resolutionMethod ?? 'dom-direct' };
     }
@@ -83,13 +137,18 @@ export class MediaService {
 
     const duplicate = [...this.resources.values()].find((item) => item.accountId === accountId && isSameResource(item, candidate));
     if (duplicate) {
-      const merged = mergeResource(duplicate, candidate); this.resources.set(duplicate.id, merged); this.emitResources(); return merged;
+      let merged = mergeResource(duplicate, candidate);
+      if (merged.url !== duplicate.url || merged.thumbUrl !== duplicate.thumbUrl) merged = { ...merged, previewUrl: undefined, previewThumbUrl: undefined, previewStatus: 'idle', previewError: undefined, previewCached: false };
+      this.resourceVersions.set(duplicate.id, (this.resourceVersions.get(duplicate.id) ?? 0) + 1);
+      this.resources.set(duplicate.id, merged); this.emitResources(); return merged;
     }
     this.resources.set(candidate.id, candidate); this.emitResources(); return candidate;
   }
   list(): MediaResource[] { return [...this.resources.values()].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)); }
   clear(): void {
     this.resources.clear(); this.pendingCovers.clear();
+    this.resourceVersions.clear();
+    this.remotePreviewTokens.clear();
     for (const path of this.blobPreviewPaths) { try { rmSync(path, { force: true }); } catch { /* best effort cleanup */ } }
     for (const [token, path] of this.previewTokens) if (this.blobPreviewPaths.has(path)) this.previewTokens.delete(token);
     this.blobPreviewPaths.clear();
@@ -115,11 +174,13 @@ export class MediaService {
     const updated = mediaResourceSchema.parse({
       ...resource,
       url: selected,
+      confirmedNoWatermark: isDoubaoPlaybackStream(selected) ? false : resource.confirmedNoWatermark,
       backupUrl: remaining[0] || undefined,
       alternateUrls: remaining.length > 1 ? remaining.slice(1, 9) : undefined,
       // A materialized Blob preview belongs to the previous primary URL.
       previewUrl: undefined,
-      previewThumbUrl: undefined
+      previewThumbUrl: undefined,
+      previewStatus: 'idle', previewError: undefined, previewCached: false
     });
     this.resources.set(resourceId, updated);
     this.emitResources();
@@ -136,9 +197,9 @@ export class MediaService {
 
   private async materializeBlobPreviewNow(resourceId: string): Promise<MediaResource | null> {
     const resource = this.resources.get(resourceId);
-    if (!resource || !this.resolveBlob) return resource ?? null;
-    const previewUrl = resource.url.startsWith('blob:') && !resource.previewUrl ? await this.writeBlobPreview(resource, resource.url, false) : resource.previewUrl;
-    const previewThumbUrl = resource.thumbUrl?.startsWith('blob:') && !resource.previewThumbUrl ? await this.writeBlobPreview(resource, resource.thumbUrl, true) : resource.previewThumbUrl;
+    if (!resource) return null;
+    const previewUrl = resource.previewUrl || (resource.url.startsWith('blob:') ? await this.writeBlobPreview(resource, resource.url, false) : this.remotePreviewUrl(resource.accountId, resource.url, resource.id));
+    const previewThumbUrl = resource.previewThumbUrl || (resource.thumbUrl?.startsWith('blob:') ? await this.writeBlobPreview(resource, resource.thumbUrl, true) : this.remotePreviewUrl(resource.accountId, resource.thumbUrl, resource.id, true));
     if (!previewUrl && !previewThumbUrl) return resource;
     const current = this.resources.get(resourceId);
     if (!current) return null;
@@ -146,6 +207,111 @@ export class MediaService {
     this.resources.set(resourceId, updated);
     this.emitResources();
     return updated;
+  }
+
+  async preparePreview(resourceId: string): Promise<MediaResource> {
+    const existing = this.prepareJobs.get(resourceId);
+    if (existing) return existing;
+    const job = this.preparePreviewNow(resourceId);
+    this.prepareJobs.set(resourceId, job);
+    try { return await job; } finally { this.prepareJobs.delete(resourceId); }
+  }
+
+  private patchResource(id: string, patch: Partial<MediaResource>): MediaResource | null {
+    const resource = this.resources.get(id);
+    if (!resource) return null;
+    const updated = { ...resource, ...patch };
+    this.resources.set(id, updated); this.emitResources(); return updated;
+  }
+
+  private async preparePreviewNow(resourceId: string): Promise<MediaResource> {
+    let resource = this.resources.get(resourceId);
+    if (!resource) throw new Error('素材不存在');
+    this.patchResource(resourceId, { previewStatus: 'loading', previewError: undefined });
+    try {
+      const completed = this.tasks().find((task) => task.resourceId === resourceId && task.status === 'completed' && !supersededDoubaoPlayback(task.resumeUrl, resource!.url) && task.path && existsSync(task.path));
+      let path = completed?.path;
+      if (!path && resource.expiresAt && Date.parse(resource.expiresAt) < Date.now()) resource = await this.refreshResource(resourceId);
+      if (!path && resource.url.startsWith('blob:')) {
+        const updated = await this.materializeBlobPreview(resourceId);
+        path = updated?.previewUrl ? this.previewPath(updated.previewUrl) ?? undefined : undefined;
+      }
+      if (!path) {
+        path = this.cache.path(resource.accountId, resource.url, detectMediaExtension('', undefined, resource.type, resource.url) || (resource.type === 'video' ? '.mp4' : '.png'));
+        if (!existsSync(path)) {
+          let refreshed = false;
+          while (true) {
+            try { await this.cacheResource(resource, path); break; }
+            catch (error) {
+              if (refreshed || !this.refresher || !isRefreshableMediaError(error)) throw error;
+              resource = await this.refreshResource(resourceId); refreshed = true;
+              path = this.cache.path(resource.accountId, resource.url, detectMediaExtension('', undefined, resource.type, resource.url) || (resource.type === 'video' ? '.mp4' : '.png'));
+            }
+          }
+        }
+      }
+      const previewUrl = this.registerPreviewPath(path);
+      let previewThumbUrl = resource.previewThumbUrl;
+      if (resource.type === 'video') previewThumbUrl = await this.createThumbnail(resource, path) || previewThumbUrl;
+      const current = this.resources.get(resourceId);
+      if (!current) throw new Error('素材已清空');
+      // A candidate may have changed while its old URL was being fetched.
+      if (current.url !== resource.url) return current;
+      return this.patchResource(resourceId, { previewUrl, previewThumbUrl, previewStatus: 'ready', previewCached: true, previewError: undefined })!;
+    } catch (error) {
+      const message = mediaErrorMessage(error);
+      this.patchResource(resourceId, { previewStatus: 'failed', previewError: message });
+      throw new Error(message);
+    }
+  }
+
+  private async cacheResource(resource: MediaResource, path: string): Promise<void> {
+    const account = this.accounts.list().find((item) => item.id === resource.accountId);
+    if (!account) throw new Error('账号不存在');
+    const referer = account.customUrl || platforms[account.platform].url;
+    let lastError: unknown;
+    for (const url of uniqueResourceUrls([resource.url, resource.backupUrl, ...(resource.alternateUrls ?? [])])) {
+      try {
+        if (url.startsWith('blob:')) {
+          if (!this.resolveBlob) throw new Error('Blob 解析不可用');
+          const bytes = await this.resolveBlob(account.id, url);
+          if (!bytes.length) throw new Error('预览数据为空');
+          writeFileSync(path, bytes); return;
+        }
+        const response = await fetchAccountMedia(session.fromPartition(`persist:account_${account.id}`), url, { headers: { Referer: referer, Origin: new URL(referer).origin }, signal: AbortSignal.timeout(45_000) });
+        await this.cache.write(response, path); return;
+      } catch (error) { lastError = error; }
+    }
+    throw lastError || new Error('预览资源不可用');
+  }
+
+  private thumbnailQueue: Promise<void> = Promise.resolve();
+  private async createThumbnail(resource: MediaResource, source: string): Promise<string | undefined> {
+    const job = this.thumbnailQueue.then(() => this.createThumbnailNow(resource, source));
+    this.thumbnailQueue = job.then(() => undefined, () => undefined);
+    return job;
+  }
+
+  private async createThumbnailNow(resource: MediaResource, source: string): Promise<string | undefined> {
+    const target = this.cache.path(resource.accountId, `cover:${resource.url}`, '.jpg');
+    if (existsSync(target)) return this.registerPreviewPath(target);
+    const found = await findFfmpeg(this.settings.get().ffmpegPath);
+    if (!found) return undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        execFile(found.path, ['-hide_banner', '-loglevel', 'error', '-y', '-i', source, '-frames:v', '1', '-vf', 'scale=640:-2', target], { windowsHide: true, timeout: 15_000 }, (error) => error ? reject(error) : resolve());
+      });
+      this.cache.trim(target);
+      return existsSync(target) ? this.registerPreviewPath(target) : undefined;
+    } catch { if (existsSync(target)) rmSync(target, { force: true }); return undefined; }
+  }
+
+  private async useDownloadedPreview(resource: MediaResource, path: string): Promise<void> {
+    this.patchResource(resource.id, { previewUrl: this.registerPreviewPath(path), previewStatus: 'ready', previewCached: true, previewError: undefined });
+    if (resource.type === 'video') {
+      const previewThumbUrl = await this.createThumbnail(resource, path);
+      if (previewThumbUrl) this.patchResource(resource.id, { previewThumbUrl });
+    }
   }
 
   private rememberRejectedCandidates(resource: MediaResource, urls: string[]): void {
@@ -199,17 +365,19 @@ export class MediaService {
     const found = await findFfmpeg(this.settings.get().ffmpegPath);
     if (!found) throw new Error('未找到 FFmpeg。请在设置中指定 ffmpeg 路径，或将 ffmpeg 加入系统 PATH');
     const root = dirname(output); mkdirSync(root, { recursive: true });
-    const source = join(root, `${previewKey(resource)}.source${sourceExtension(resource)}`);
+    const local = resource.previewUrl ? this.previewPath(resource.previewUrl) : null;
+    const source = local || join(root, `${previewKey(resource)}.source${sourceExtension(resource)}`);
     const temporaryOutput = `${output}.part`;
     try {
-      await this.writeConversionSource(resource, source);
+      if (!local) await this.writeConversionSource(resource, source);
       await runFfmpeg(found.path, source, temporaryOutput);
       if (!existsSync(temporaryOutput)) throw new Error('FFmpeg 未生成预览文件');
       if (existsSync(output)) rmSync(output, { force: true });
       renameSync(temporaryOutput, output);
+      if (dirname(output) === this.cache.root) this.cache.trim(output);
       return { path: output, url: this.registerPreviewPath(output), cached: false, toolPath: found.path };
     } finally {
-      if (existsSync(source)) rmSync(source, { force: true });
+      if (!local && existsSync(source)) rmSync(source, { force: true });
       if (existsSync(temporaryOutput)) rmSync(temporaryOutput, { force: true });
     }
   }
@@ -218,6 +386,68 @@ export class MediaService {
     const token = createHash('sha256').update(path).digest('hex');
     this.previewTokens.set(token, path);
     return `workbench-media://preview/${token}`;
+  }
+
+  private remotePreviewUrl(accountId: string, url?: string, resourceId?: string, thumbnail = false): string | undefined {
+    if (!url || !/^https?:\/\//i.test(url)) return undefined;
+    const token = createHash('sha256').update(`${accountId}:${url}`).digest('hex');
+    this.remotePreviewTokens.set(token, { accountId, url, resourceId, thumbnail });
+    return `workbench-media://remote/${token}`;
+  }
+
+  async remotePreviewResponse(request: Request): Promise<Response | null> {
+    const parsed = new URL(request.url);
+    if (parsed.hostname !== 'remote') return null;
+    const entry = this.remotePreviewTokens.get(parsed.pathname.slice(1));
+    const account = entry && this.accounts.list().find((item) => item.id === entry.accountId);
+    if (!entry || !account) return new Response('Not found', { status: 404 });
+    const referer = account.customUrl || platforms[account.platform].url;
+    const headers: Record<string, string> = { Referer: referer, Origin: new URL(referer).origin };
+    const range = request.headers.get('range');
+    if (range) headers.Range = range;
+    try {
+      if (entry.thumbnail) {
+        const path = this.cache.path(entry.accountId, `poster:${entry.url}`, '.jpg');
+        if (!existsSync(path)) {
+          let job = this.coverJobs.get(path);
+          if (!job) {
+            job = (async () => {
+              const response = await fetchAccountMedia(session.fromPartition(`persist:account_${account.id}`), entry.url, { headers, signal: AbortSignal.timeout(30_000) });
+              await this.cache.write(response, path, 10 * 1024 * 1024);
+            })();
+            this.coverJobs.set(path, job);
+          }
+          try { await job; } finally { if (this.coverJobs.get(path) === job) this.coverJobs.delete(path); }
+        }
+        return new Response(await import('node:fs/promises').then((fs) => fs.readFile(path)), { headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=86400' } });
+      }
+      const resource = entry.resourceId ? this.resources.get(entry.resourceId) : undefined;
+      const urls = uniqueResourceUrls([entry.url, resource?.url, resource?.backupUrl, ...(resource?.alternateUrls ?? [])]);
+      for (const url of urls) {
+        if (!/^https?:/i.test(url)) continue;
+        try {
+        const response = await fetchAccountMedia(session.fromPartition(`persist:account_${account.id}`), url, { headers, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) });
+        if (response.status === 429) { await response.body?.cancel(); return new Response('站点限流，请稍后再预览', { status: 429, headers: { 'retry-after': response.headers.get('retry-after') || '60' } }); }
+        if (!response.ok || /text\/|json|xml/i.test(response.headers.get('content-type') || '')) { await response.body?.cancel(); continue; }
+        // Only media headers cross into the renderer. Site cookies and CSP belong
+        // to the account page and must not be applied to the workbench origin.
+        const forwarded = new Headers();
+        for (const key of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
+          if (key === 'content-length' && response.headers.get('content-encoding') && response.headers.get('content-encoding') !== 'identity') continue;
+          const value = response.headers.get(key); if (value) forwarded.set(key, value);
+        }
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers: forwarded });
+        } catch (error) {
+          if (error instanceof MediaHttpError && error.status === 429) return new Response('站点限流，请稍后再预览', { status: 429 });
+          if (request.signal.aborted) break;
+          // A TLS/socket failure on one CDN must not skip the remaining captured URLs.
+          continue;
+        }
+      }
+      return new Response('素材地址不可用，请重新解析', { status: 502 });
+    } catch {
+      return new Response('视频或封面加载失败，请重新解析素材地址', { status: 502 });
+    }
   }
 
   private async writeConversionSource(resource: MediaResource, target: string): Promise<void> {
@@ -241,7 +471,7 @@ export class MediaService {
           writeFileSync(target, data);
           return;
         }
-        const response = await session.fromPartition(`persist:account_${account.id}`).fetch(url, { headers: { Referer: referer, Origin: origin } });
+        const response = await fetchAccountMedia(session.fromPartition(`persist:account_${account.id}`), url, { headers: { Referer: referer, Origin: origin } });
         if (!response.ok || !response.body) { lastError = new Error(`HTTP ${response.status}`); continue; }
         const writer = createWriteStream(target);
         // Cancellation can race with a pending WebStream read. Keep an error
@@ -295,7 +525,7 @@ export class MediaService {
       const hash = createHash('sha256').update(resource.url).digest('hex');
       return join(this.videoRoot(), 'Videos', `转码_${hash}.mp4`);
     }
-    return previewOutputPath(resource);
+    return this.cache.path(resource.accountId, `compatible:${resource.url}`, '.mp4');
   }
   private readonly reservedPaths = new Set<string>();
   private safePath(path: string): string { const target = resolve(path); const roots = [this.root(), this.videoRoot()]; if (!roots.some((root) => isPathInside(root, target))) throw new Error('文件不在下载目录内'); return target; }
@@ -367,20 +597,43 @@ export class MediaService {
     const resource = this.resources.get(resourceId); if (!resource) throw new Error('素材不存在');
     if (!resource.url) throw new Error('素材还没有可下载地址，请先解析 Dola 原始资源');
     const automatic = options.automatic === true;
-    const existing = this.tasks().find((task) => task.resourceId === resourceId && (['queued', 'running'].includes(task.status) || (task.status === 'completed' && Boolean(task.path && existsSync(task.path)))
+    const existing = this.tasks().find((task) => task.resourceId === resourceId && (['queued', 'running'].includes(task.status) || (task.status === 'completed' && !supersededDoubaoPlayback(task.resumeUrl, resource.url) && Boolean(task.path && existsSync(task.path)))
       // An automatic capture must not mint a fresh row every time the page re-offers the same
       // resource. A page-side capture types a URL by guessing, so its failures are permanent -
       // the file it fetched is simply not media. Without this, every page load re-enqueued the
       // same three resources and each session added another identical failed row.
       // A manual enqueue is exempt: that is the user asking again, and gets a new attempt.
-      || (automatic && task.status === 'failed')));
+      || task.status === 'paused' || (automatic && task.status === 'failed')));
     if (existing) return existing;
     const now = new Date().toISOString(); const task: DownloadTask = { id: randomUUID(), resourceId, accountId: resource.accountId, title: resource.title || resource.type, status: 'queued', receivedBytes: 0, attempts: 0, createdAt: now, updatedAt: now, automatic: automatic || undefined };
     this.taskMap.set(task.id, task); this.persistTasks(); this.emitTasks(); void this.pump(); return task;
   }
   enqueueMany(resourceIds: string[]): DownloadTask[] { return [...new Set(resourceIds)].map((id) => this.enqueue(id)); }
-  cancel(id: string): void { const task = this.taskMap.get(id); if (!task || !['queued', 'running'].includes(task.status)) return; this.aborters.get(id)?.abort(); this.updateTask(id, { status: 'cancelled', error: undefined }); }
-  retry(id: string): DownloadTask { const task = this.taskMap.get(id); if (!task) throw new Error('下载任务不存在'); if (!['failed', 'cancelled'].includes(task.status)) throw new Error('当前任务不能重试'); const next = this.updateTask(id, { status: 'queued', error: undefined, receivedBytes: 0, totalBytes: undefined, progress: undefined, path: undefined }); void this.pump(); return next; }
+  cancel(id: string): void {
+    const task = this.taskMap.get(id); if (!task || !['queued', 'running', 'paused'].includes(task.status)) return;
+    this.pausedTasks.delete(id); this.aborters.get(id)?.abort();
+    if (task.status === 'paused' && !this.aborters.has(id) && task.path) {
+      const partial = `${this.safePath(task.path)}.part`; if (existsSync(partial)) rmSync(partial, { force: true });
+      this.reservedPaths.delete(task.path);
+    }
+    this.updateTask(id, { status: 'cancelled', error: undefined, speedBytesPerSecond: undefined, remainingSeconds: undefined });
+  }
+  pause(id: string): void {
+    const task = this.taskMap.get(id); if (!task || !['queued', 'running'].includes(task.status)) return;
+    this.pausedTasks.add(id);
+    this.updateTask(id, { status: 'paused', speedBytesPerSecond: undefined, remainingSeconds: undefined });
+    this.aborters.get(id)?.abort();
+  }
+  async resumeTask(id: string): Promise<DownloadTask> {
+    const task = this.taskMap.get(id); if (!task || task.status !== 'paused') throw new Error('只有暂停的任务可以继续');
+    // Wait for the previous writer to close before appending to the same file.
+    for (let attempt = 0; this.aborters.has(id) && attempt < 100; attempt++) await new Promise((resolve) => setTimeout(resolve, 20));
+    if (this.aborters.has(id)) throw new Error('任务仍在暂停，请稍后继续');
+    this.pausedTasks.delete(id);
+    if (task.path && !existsSync(`${this.safePath(task.path)}.part`)) this.reservedPaths.delete(task.path);
+    const next = this.updateTask(id, { status: 'queued', error: undefined }); void this.pump(); return next;
+  }
+  retry(id: string): DownloadTask { const task = this.taskMap.get(id); if (!task) throw new Error('下载任务不存在'); if (!['failed', 'cancelled'].includes(task.status)) throw new Error('当前任务不能重试'); if (!this.resources.has(task.resourceId)) throw new Error('请先打开原视频对话重新捕获素材'); const next = this.updateTask(id, { status: 'queued', phase: 'waiting', error: undefined, receivedBytes: 0, totalBytes: undefined, progress: undefined, path: undefined, resumeUrl: undefined, resumeEtag: undefined, speedBytesPerSecond: undefined, remainingSeconds: undefined }); void this.pump(); return next; }
   /**
    * Drop every task that has stopped moving: failed and cancelled. Tasks are persisted, so
    * without this the queue only ever grows - a failure from three weeks ago still occupies a
@@ -396,36 +649,84 @@ export class MediaService {
 
   private async pump(): Promise<void> {
     while (this.running < this.settings.get().downloadConcurrency) {
-      const task = this.tasks().reverse().find((item) => item.status === 'queued'); if (!task) break;
-      this.running++; this.updateTask(task.id, { status: 'running' }); void this.run(task.id).finally(() => { this.running--; void this.pump(); });
+      const queued = this.tasks().reverse().filter((item) => item.status === 'queued');
+      for (const item of queued) {
+        const until = this.accountCooldowns.get(item.accountId) ?? 0;
+        if (until > Date.now() && item.retryAfter !== new Date(until).toISOString()) this.updateTask(item.id, { retryAfter: new Date(until).toISOString(), error: '平台限流，按服务器要求等待后继续' });
+      }
+      const task = queued.find((item) => (this.runningByAccount.get(item.accountId) ?? 0) < 2 && (this.accountCooldowns.get(item.accountId) ?? 0) <= Date.now());
+      if (!task) break;
+      this.running++; this.runningByAccount.set(task.accountId, (this.runningByAccount.get(task.accountId) ?? 0) + 1);
+      this.updateTask(task.id, { status: 'running', error: undefined, retryAfter: undefined });
+      void this.run(task.id).finally(() => { this.running--; this.runningByAccount.set(task.accountId, Math.max(0, (this.runningByAccount.get(task.accountId) ?? 1) - 1)); void this.pump(); });
+    }
+    if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
+    const waitingUntil = this.tasks().filter((task) => task.status === 'queued').map((task) => this.accountCooldowns.get(task.accountId) ?? 0).filter((time) => time > Date.now());
+    if (waitingUntil.length) {
+      this.cooldownTimer = setTimeout(() => { this.cooldownTimer = undefined; void this.pump(); }, Math.min(2_147_483_647, Math.max(1, Math.min(...waitingUntil) - Date.now())));
+      this.cooldownTimer.unref();
     }
   }
   resume(): void { void this.pump(); }
   private persistTasks(): void { this.taskStore?.write(this.tasks()); }
   private async run(id: string): Promise<void> {
-    const task = this.taskMap.get(id)!; const resource = this.resources.get(task.resourceId); if (!resource) { this.updateTask(id, { status: 'failed', error: '素材已不存在' }); return; }
-    const controller = new AbortController(); this.aborters.set(id, controller); let file = this.availablePath(resource); let partial = `${file}.part`;
+    const task = this.taskMap.get(id)!; let resource = this.resources.get(task.resourceId); if (!resource) { this.updateTask(id, { status: 'failed', error: '请打开原视频对话重新捕获素材' }); return; }
+    const controller = new AbortController(); this.aborters.set(id, controller); let file = ''; let partial = '';
     try {
+      if (this.accounts.list().find((account) => account.id === resource!.accountId)?.platform === 'doubao' && isDoubaoPlaybackStream(resource.url) && resource.source !== 'doubao-video-fallback-api') {
+        this.updateTask(id, { phase: 'resolving' });
+        if (this.refresher) resource = await this.refreshResource(resource.id);
+        if (isDoubaoPlaybackStream(resource.url) && resource.source !== 'doubao-video-fallback-api') throw new Error('当前地址是可能带水印的豆包播放流。请打开该作品页面，使用“豆包最新视频”解析站点原始下载地址后重试');
+      }
+      const resumable = task.path && task.resumeUrl && existsSync(`${task.path}.part`);
+      file = resumable ? this.safePath(task.path!) : this.availablePath(resource); partial = `${file}.part`;
+      this.reservedPaths.add(file); this.updateTask(id, { path: file, phase: 'downloading' });
+      if (resource.expiresAt && Date.parse(resource.expiresAt) < Date.now() && this.refresher) {
+        this.updateTask(id, { phase: 'resolving' }); resource = await this.refreshResource(resource.id);
+      }
       const maxAttempts = this.settings.get().downloadRetryCount + 1; let lastError: unknown;
+      const invalidCandidates = new Map<string, unknown>();
+      let refreshed = false;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         if (controller.signal.aborted) throw new DOMException('已取消', 'AbortError'); this.updateTask(id, { attempts: attempt });
-        try { const detectedExtension = await this.downloadResource(resource, partial, id, controller.signal); if (detectedExtension && extname(file).toLowerCase() !== detectedExtension) { this.reservedPaths.delete(file); const correctedFile = this.availablePath(resource, detectedExtension); const correctedPartial = `${correctedFile}.part`; renameSync(partial, correctedPartial); file = correctedFile; partial = correctedPartial; } renameSync(partial, file); this.updateTask(id, { status: 'completed', path: file, progress: 100 }); return; }
-        catch (error) { lastError = error; if (existsSync(partial)) rmSync(partial, { force: true }); if (controller.signal.aborted || attempt === maxAttempts) throw error; }
+        try { this.updateTask(id, { phase: 'downloading' }); const detectedExtension = await this.downloadResource(resource, partial, id, controller.signal, invalidCandidates); if (detectedExtension && extname(file).toLowerCase() !== detectedExtension) { this.reservedPaths.delete(file); const correctedFile = this.availablePath(resource, detectedExtension); const correctedPartial = `${correctedFile}.part`; renameSync(partial, correctedPartial); file = correctedFile; partial = correctedPartial; } renameSync(partial, file); this.updateTask(id, { status: 'completed', phase: 'completed', path: file, progress: 100, speedBytesPerSecond: undefined, remainingSeconds: undefined }); void this.useDownloadedPreview(resource, file).catch(() => undefined); return; }
+        catch (error) {
+          lastError = error;
+          if (!controller.signal.aborted && existsSync(partial)) rmSync(partial, { force: true });
+          if (controller.signal.aborted) throw error;
+          if (error instanceof MediaHttpError && error.status === 429) {
+            const until = Math.max(this.accountCooldowns.get(resource.accountId) ?? 0, error.retryAt!);
+            this.accountCooldowns.set(resource.accountId, until);
+            setMediaRequestCooldown(session.fromPartition(`persist:account_${resource.accountId}`), until);
+            this.updateTask(id, { retryAfter: new Date(until).toISOString() });
+            throw error;
+          }
+          if (!refreshed && this.refresher && isRefreshableMediaError(error)) {
+            refreshed = true; this.updateTask(id, { phase: 'resolving' });
+            try { resource = await this.refreshResource(resource.id); attempt--; continue; }
+            catch { /* Retain the original download error and its actionable explanation. */ }
+          }
+          if (attempt === maxAttempts || !shouldRetryDownload(error)) throw error;
+          this.updateTask(id, { phase: 'retrying' });
+          await waitForRetry(retryDelay(error, attempt), controller.signal);
+        }
       }
       throw lastError;
     } catch (error) {
-      if (existsSync(partial)) rmSync(partial, { force: true });
-      if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) this.updateTask(id, { status: 'cancelled' });
-      else this.updateTask(id, { status: 'failed', error: error instanceof Error ? error.message : String(error) });
-    } finally { this.aborters.delete(id); this.reservedPaths.delete(file); }
+      const paused = this.pausedTasks.has(id);
+      if (!paused && existsSync(partial)) rmSync(partial, { force: true });
+      if (paused) this.updateTask(id, { status: 'paused', speedBytesPerSecond: undefined, remainingSeconds: undefined });
+      else if (controller.signal.aborted) this.updateTask(id, { status: 'cancelled' });
+      else this.updateTask(id, { status: 'failed', error: mediaErrorMessage(error), speedBytesPerSecond: undefined, remainingSeconds: undefined });
+    } finally { this.aborters.delete(id); this.progressUpdates.delete(id); if (!this.pausedTasks.has(id)) this.reservedPaths.delete(file); }
   }
-  private async downloadResource(resource: MediaResource, partial: string, taskId: string, signal: AbortSignal): Promise<string | undefined> {
+  private async downloadResource(resource: MediaResource, partial: string, taskId: string, signal: AbortSignal, invalidCandidates = new Map<string, unknown>()): Promise<string | undefined> {
     const account = this.accounts.list().find((item) => item.id === resource.accountId);
     if (!account) throw new Error('账号不存在');
     const ses = session.fromPartition(`persist:account_${account.id}`);
     const referer = account.customUrl || platforms[account.platform].url;
     const origin = new URL(referer).origin;
-    const urls = uniqueResourceUrls([resource.url, resource.backupUrl, ...(resource.alternateUrls ?? [])]);
+    const urls = uniqueResourceUrls([resource.url, resource.backupUrl, ...(resource.alternateUrls ?? [])]).filter((url) => account.platform !== 'doubao' || !isDoubaoPlaybackStream(url) || (resource.source === 'doubao-video-fallback-api' && url === resource.url));
     let lastError: unknown;
     const rejected: string[] = [];
     const rememberFailure = (url: string, error: unknown): void => {
@@ -436,6 +737,7 @@ export class MediaService {
 
     for (const url of urls) {
       if (signal.aborted) throw new DOMException('已取消', 'AbortError');
+      if (invalidCandidates.has(url)) { lastError = invalidCandidates.get(url); continue; }
       try {
         if (/^blob:/i.test(url)) {
           if (!this.resolveBlob) throw new Error('Blob 下载服务不可用');
@@ -449,50 +751,86 @@ export class MediaService {
         }
 
         try { this.programmaticDownloadMarker?.(account.id, url); } catch { /* the duplicate guard must never break a download */ }
-        const response = await ses.fetch(url, { signal, headers: { Referer: referer, Origin: origin } });
+        const previous = this.taskMap.get(taskId)!;
+        const offset = previous.resumeUrl === url && previous.resumeEtag && existsSync(partial) ? statSync(partial).size : 0;
+        const headers: Record<string, string> = { Referer: referer, Origin: origin };
+        if (offset) { headers.Range = `bytes=${offset}-`; headers['If-Range'] = previous.resumeEtag!; }
+        const response = await fetchAccountMedia(ses, url, { signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]), headers });
         if (!response.ok || !response.body) {
-          rememberFailure(url, new Error(response.ok ? '下载响应为空' : `HTTP ${response.status}`));
+          await response.body?.cancel();
+          const error = response.ok ? new Error('下载响应为空') : new MediaHttpError(response.status, response.headers.get('retry-after'));
+          if (error instanceof MediaHttpError && (error.status === 429 || error.status === 503 && error.retryAt)) throw error;
+          if (error instanceof MediaHttpError && error.status >= 400 && error.status < 500 && error.status !== 408) invalidCandidates.set(url, error);
+          rememberFailure(url, error);
           continue;
         }
 
         const contentType = response.headers.get('content-type') ?? '';
-        const total = Number(response.headers.get('content-length')) || undefined;
-        const writer = createWriteStream(partial);
-        writer.on('error', () => undefined);
+        const append = offset > 0 && response.status === 206;
+        if (append && (!response.headers.get('content-range')?.startsWith(`bytes ${offset}-`) || (response.headers.get('etag') && response.headers.get('etag') !== previous.resumeEtag))) { await response.body.cancel(); throw new Error('断点位置或资源版本改变，请重新下载'); }
+        const start = append ? offset : 0;
+        const encoded = response.headers.get('content-encoding');
+        const length = encoded && encoded !== 'identity' ? undefined : Number(response.headers.get('content-length')) || undefined;
+        const contentRange = response.headers.get('content-range')?.match(/^bytes (\d+)-(\d+)\/(\d+|\*)$/);
+        if (response.status === 206 && (!contentRange || Number(contentRange[1]) !== start)) {
+          await response.body.cancel(); throw new Error('断点位置或资源版本改变，请重新下载');
+        }
+        const total = contentRange && contentRange[3] !== '*' ? Number(contentRange[3]) : length ? length + start : undefined;
+        this.updateTask(taskId, { resumeUrl: url, resumeEtag: response.headers.get('etag') || undefined });
+        const writer = createWriteStream(partial, { flags: append ? 'a' : 'w' });
         const reader = response.body.getReader();
-        let received = 0;
+        let writeError: Error | undefined;
+        writer.on('error', (error) => { writeError = error; void reader.cancel(error).catch(() => undefined); });
+        let received = start;
+        const started = Date.now();
         let firstChunk: Uint8Array | undefined;
         let detectedExtension: string | undefined;
         try {
           const first = await reader.read();
           if (first.done) throw new Error('下载响应为空');
           firstChunk = first.value;
-          if (isClearlyErrorPayload(contentType, firstChunk)) throw new Error(`下载响应不是媒体文件（${contentType || '未知类型'}）`);
+          if (isClearlyErrorPayload(contentType, firstChunk)) {
+            const error = new Error(`下载响应不是媒体文件（${contentType || '未知类型'}）`);
+            invalidCandidates.set(url, error); throw error;
+          }
           detectedExtension = detectMediaExtension(contentType, firstChunk, resource.type, url);
           received += firstChunk.byteLength;
           if (!writer.write(Buffer.from(firstChunk))) await once(writer, 'drain');
-          this.updateTask(taskId, { receivedBytes: received, totalBytes: total, progress: total ? Math.min(99, Math.round(received / total * 100)) : undefined });
+          this.reportProgress(taskId, received, total, start, started);
           while (true) {
             const chunk = await reader.read();
             if (chunk.done) break;
             if (signal.aborted) throw new DOMException('已取消', 'AbortError');
             received += chunk.value.byteLength;
             if (!writer.write(Buffer.from(chunk.value))) await once(writer, 'drain');
-            this.updateTask(taskId, { receivedBytes: received, totalBytes: total, progress: total ? Math.min(99, Math.round(received / total * 100)) : undefined });
+            this.reportProgress(taskId, received, total, start, started);
           }
+          if (writeError) throw writeError;
           writer.end();
           await once(writer, 'finish');
+          if (total && received !== total) throw new Error('视频下载不完整，请重试');
+          this.reportProgress(taskId, received, total, start, started, true);
           this.rememberRejectedCandidates(resource, rejected);
           return detectedExtension ?? detectMediaExtension(contentType, firstChunk, resource.type, url);
         } catch (error) {
           try { await reader.cancel(); } catch { /* response may already be closed */ }
+          if (this.pausedTasks.has(taskId) && !writer.destroyed) {
+            // Flush already received bytes before preserving the partial file.
+            // Destroying a writer here can discard its buffered first chunk.
+            const flushed = once(writer, 'finish');
+            writer.end();
+            try { await flushed; } catch { /* handled by the original failure */ }
+          }
           writer.destroy();
-          if (existsSync(partial)) rmSync(partial, { force: true });
+          await new Promise<void>((resolve) => { if (writer.closed) resolve(); else writer.once('close', resolve); });
+          if (!this.pausedTasks.has(taskId) && existsSync(partial)) rmSync(partial, { force: true });
           if (signal.aborted) throw error;
+          if (/ENOSPC|EACCES|EPERM|ENOENT/.test(error instanceof Error ? error.message : String(error))) throw error;
           rememberFailure(url, error);
         }
       } catch (error) {
-        if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+        if (signal.aborted) throw error;
+        if (error instanceof MediaHttpError && (error.status === 429 || error.status === 503 && error.retryAt) || /ERR_CERT_|ERR_SSL_|ENOSPC|EACCES|EPERM|ENOENT/.test(error instanceof Error ? error.message : String(error))) throw error;
         if (!rejected.includes(url)) rememberFailure(url, error);
         if (existsSync(partial)) rmSync(partial, { force: true });
       }
@@ -500,6 +838,14 @@ export class MediaService {
 
     this.rememberRejectedCandidates(resource, rejected);
     throw lastError instanceof Error ? lastError : new Error('下载响应为空');
+  }
+
+  private reportProgress(id: string, receivedBytes: number, totalBytes: number | undefined, start: number, started: number, force = false): void {
+    const now = Date.now();
+    if (!force && now - (this.progressUpdates.get(id) ?? 0) < 350) return;
+    this.progressUpdates.set(id, now);
+    const speedBytesPerSecond = Math.round((receivedBytes - start) / Math.max(0.1, (now - started) / 1000));
+    this.updateTask(id, { receivedBytes, totalBytes, progress: totalBytes ? Math.min(99, Math.round(receivedBytes / totalBytes * 100)) : undefined, speedBytesPerSecond, remainingSeconds: totalBytes && speedBytesPerSecond ? Math.ceil((totalBytes - receivedBytes) / speedBytesPerSecond) : undefined });
   }
 
   listFiles(raw: Partial<LibraryQuery> = {}): LibraryPage {
@@ -535,10 +881,6 @@ type FfmpegProbe = FfmpegCandidate & { version: string };
 
 function previewKey(resource: MediaResource): string {
   return createHash('sha256').update(JSON.stringify({ accountId: resource.accountId, url: resource.url, backupUrl: resource.backupUrl ?? '', alternateUrls: resource.alternateUrls ?? [] })).digest('hex');
-}
-
-function previewOutputPath(resource: MediaResource): string {
-  return join(tmpdir(), 'ai-creation-workbench', 'preview-cache', `${previewKey(resource)}.mp4`);
 }
 
 function sourceExtension(resource: MediaResource): string {
@@ -600,6 +942,25 @@ function runFfmpeg(ffmpegPath: string, source: string, output: string): Promise<
   });
 }
 
+export function mediaErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/HTTP (401|403|410)/.test(message)) return '视频地址已过期或需要登录，请打开原视频对话后重新解析';
+  if (/HTTP 404/.test(message)) return '视频地址不存在，请重新解析或切换候选地址';
+  if (/HTTP 429/.test(message)) return '站点请求过于频繁，请稍后重试或降低同时下载数';
+  if (/ENOSPC/.test(message)) return '磁盘空间不足，请清理磁盘或更换下载目录';
+  if (/EACCES|EPERM/.test(message)) return '下载目录不可写，请在设置中选择有写入权限的目录';
+  if (/ENOENT/.test(message)) return '下载目录不存在或已移动，请在设置中重新选择目录';
+  if (/TimeoutError|timed out|timeout/i.test(message)) return '请求超时，请检查账号代理或稍后重试';
+  if (/ERR_CONNECTION_CLOSED|ERR_CONNECTION_RESET/.test(message)) return '媒体连接被关闭，请检查账号或系统代理后重试，也可切换候选地址';
+  if (/ERR_CERT_|ERR_SSL_/.test(message)) return '媒体 HTTPS 安全连接失败，请检查系统时间、代理和证书配置';
+  if (/ERR_|fetch failed/i.test(message)) return '网络连接失败，请检查账号代理后重试';
+  return message.slice(0, 1000);
+}
+
+function isRefreshableMediaError(error: unknown): boolean {
+  return /HTTP (401|403|404|410)|登录页|错误页面|不是媒体文件|地址已过期/i.test(error instanceof Error ? error.message : String(error));
+}
+
 function normalizeDate(value: unknown): string | undefined { if (!value) return undefined; const date = new Date(typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : String(value)); return Number.isNaN(date.valueOf()) ? undefined : date.toISOString(); }
 function cleanRecord(value: Record<string, unknown>): Record<string, unknown> {
   const result = { ...value };
@@ -650,6 +1011,7 @@ function shouldKeepResource(resource: MediaResource, platform: PlatformId): bool
       // `doubao_download_info` or `maowang_bridge`. These are authoritative
       // platform responses, not arbitrary DOM video elements.
       if (source === 'doubao-creation-resource-panel') return true;
+      if (source === 'doubao-video-fallback-api') return resource.resolutionMethod === 'fallback_api' && resource.qualityEvidence === 'platform-api';
       if (/^(?:doubao[_-](?:download|play|original)|maowang[_-](?:bridge|doubao))/.test(source)) {
         return Boolean(resource.confirmedNoWatermark || resource.qualityEvidence === 'platform-api' || resource.qualityEvidence === 'server-original');
       }
@@ -664,7 +1026,15 @@ function shouldKeepResource(resource: MediaResource, platform: PlatformId): bool
   if (source === 'site-download') return true;
   if ((width && width < 240) || (height && height < 180)) return false;
   const likelyApiImage = isLikelyApiImage(resource, text);
-  if (platform === 'doubao') return !/generic-dom|dom-fallback/.test(source) && (originalSignal.test(text) || (width >= 512 && height >= 512));
+  if (platform === 'doubao') {
+    if (/generic-dom|generic-performance|dom-fallback/.test(source)) return false;
+    // Do not promote hashed page illustrations just because they are large
+    // or hosted on byteimg/imagex. Original creation fields and the dedicated
+    // creation bridge supply provenance; generic payload fields do not.
+    if (source.startsWith('cdp:')) return resource.resolutionMethod === 'image-ori-raw' && resource.qualityEvidence === 'server-original';
+    if (resource.confirmedNoWatermark && (resource.qualityEvidence === 'server-original' || resource.qualityEvidence === 'platform-api')) return true;
+    return /^(?:doubao-image-data|doubao-creation-resource-panel)$/.test(source) && (width >= 512 && height >= 512);
+  }
   if (platform === 'qianwen') return (source.startsWith('cdp:qianwen:') && resource.qualityEvidence === 'platform-api') || width >= 512 && height >= 512 || likelyApiImage;
   if (platform === 'dola') {
     if (coverSignal.test(text) && /video|播放|生成视频|原视频/.test(text)) return false;
@@ -715,8 +1085,9 @@ function isSameResource(a: MediaResource, b: MediaResource): boolean {
 }
 function mergeResource(current: MediaResource, incoming: MediaResource): MediaResource {
   const currentArea = (current.width ?? 0) * (current.height ?? 0); const incomingArea = (incoming.width ?? 0) * (incoming.height ?? 0);
-  const preferIncoming = Boolean(incoming.url) && !current.url || incoming.confirmedNoWatermark && !current.confirmedNoWatermark || incomingArea > currentArea || resourceIdentity(current.url) === resourceIdentity(incoming.url);
+  const preferIncoming = !(isDoubaoPlaybackStream(incoming.url) && current.confirmedNoWatermark) && (Boolean(incoming.url) && !current.url || incoming.confirmedNoWatermark && !current.confirmedNoWatermark || incomingArea > currentArea || resourceIdentity(current.url) === resourceIdentity(incoming.url));
   const primary = preferIncoming ? incoming : current; const alternate = preferIncoming ? current : incoming;
+  incoming = { ...incoming, source: primary.source, resolutionMethod: primary.resolutionMethod };
   const evidenceRank: Record<NonNullable<MediaResource['qualityEvidence']>, number> = { unknown: 0, 'dom-direct': 1, 'decoded-token': 2, 'platform-api': 3, 'server-original': 4 };
   const currentEvidence = current.qualityEvidence ?? 'unknown'; const incomingEvidence = incoming.qualityEvidence ?? 'unknown'; const qualityEvidence = evidenceRank[incomingEvidence] >= evidenceRank[currentEvidence] ? incomingEvidence : currentEvidence;
   const url = primary.url || alternate.url;
@@ -752,7 +1123,8 @@ export function detectMediaExtension(contentType: string, bytes: Uint8Array | un
 }
 
 function isClearlyErrorPayload(contentType: string, bytes: Uint8Array): boolean {
-  if (!/text\/html|application\/(?:json|problem\+json)/i.test(contentType)) return false;
   const prefix = Buffer.from(bytes).subarray(0, 256).toString('utf8').trimStart();
+  if (/^<(?:!doctype\s+html|html|head|body|\?xml|error)(?:\s|>|\/)/i.test(prefix)) return true;
+  if (!/text\/html|application\/(?:json|problem\+json)/i.test(contentType)) return false;
   return prefix.startsWith('<') || prefix.startsWith('{') || prefix.startsWith('[');
 }

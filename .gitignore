@@ -10,6 +10,12 @@ app/diagnose-packed-data/
 app/diagnose-packed.png
 app/diagnose-gui-preview.png
 app/diagnose-gui-*.png
+app/.verification/
+app/settings-*.png
+app/preview-*.png
+
+# Local network-rule proposal; application settings remain separate.
+CLASH_WORKBENCH_RULES.yaml
 
 # Decompiled reference material is for local recovery only, not the build input.
 # reference/ is the V5.2 drop; the docs cite it by that path, so it stays on disk and out of git.
