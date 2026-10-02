@@ -108,7 +108,7 @@ jobs:
             esac
             echo "Auditing $app_path as darwin-$arch"
             node scripts/audit-package.mjs "$app_path" darwin "$arch"
-          done < <(find release -type d -name '*.app' -print)
+          done < <(find release -type d -name '*.app' -prune -print)
           if [ "$found" -eq 0 ]; then
             echo "No macOS .app bundle was produced" >&2
             exit 1
@@ -131,7 +131,7 @@ jobs:
             echo "Starting $app_path as darwin-$arch"
             node scripts/smoke-packaged.mjs "$app_path" darwin "$arch" 6
             node scripts/verify-macos-release.mjs "$app_path" "$arch"
-          done < <(find release -type d -name '*.app' -print)
+          done < <(find release -type d -name '*.app' -prune -print)
           if [ "$found" -eq 0 ]; then
             echo "No macOS .app bundle was produced" >&2
             exit 1
