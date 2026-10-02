@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -32,6 +34,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Prepare native resources before runtime tests
+        run: |
+          node scripts/prepare-media-resources.mjs darwin x64 darwin arm64
+          node scripts/prepare-native-resources.mjs darwin x64 darwin arm64
+          node scripts/validate-native-resources.mjs darwin x64 darwin arm64
 
       - name: Typecheck
         run: npm run typecheck
@@ -73,6 +81,8 @@ jobs:
         run: npm run smoke:task-workflows
 
       - name: Build unsigned macOS directory packages
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run pack:mac
 
       - name: Audit each generated app bundle

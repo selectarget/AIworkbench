@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { join, resolve } from 'node:path';
 import { isPathInside, mediaTypeFromPath, normalizeExternalHttpUrl, normalizeNavigationUrl, sanitizeFilename } from '../src/main/path-utils';
 
 describe('download path safety', () => {
   it('sanitizes Windows reserved filename characters', () => { expect(sanitizeFilename('a<>:"/\\|?*b.mp4')).toBe('a_________b.mp4'); });
-  it('rejects traversal outside the download root', () => { expect(isPathInside('C:\\portable\\data\\downloads', 'C:\\portable\\data\\secret.txt')).toBe(false); });
-  it('accepts a nested download path', () => { expect(isPathInside('C:\\portable\\data\\downloads', 'C:\\portable\\data\\downloads\\豆包\\1.mp4')).toBe(true); });
+  it('rejects traversal outside the download root', () => {
+    const root = resolve('portable', 'data', 'downloads');
+    expect(isPathInside(root, join(root, '..', 'secret.txt'))).toBe(false);
+  });
+  it('accepts a nested download path', () => {
+    const root = resolve('portable', 'data', 'downloads');
+    expect(isPathInside(root, join(root, '豆包', '1.mp4'))).toBe(true);
+  });
   it('classifies common media types', () => { expect(mediaTypeFromPath('x.WEBP')).toBe('image'); expect(mediaTypeFromPath('x.mp4')).toBe('video'); });
   it('normalizes host-only navigation and rejects non-web schemes or embedded credentials', () => {
     expect(normalizeNavigationUrl('example.com/path')).toBe('https://example.com/path');
