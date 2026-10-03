@@ -449,6 +449,17 @@ export function App(): React.JSX.Element {
       setStatus(`正在导航到 ${normalized}`);
     } catch (error) { report(error); }
   }
+  async function clearDoubaoHistory(): Promise<void> {
+    if (!activeAccount || activeAccount.platform !== 'doubao') return setStatus('请先打开一个豆包账号');
+    if (busy) return;
+    const account = activeAccount;
+    try {
+      setBusy(true);
+      setStatus(`正在核对 ${account.name} 的全部历史会话，删除前会显示数量供你确认`);
+      const result = unwrap(await window.workbench.browser.clearDoubaoHistory(account.id));
+      setStatus(result.message);
+    } catch (error) { report(error); } finally { setBusy(false); }
+  }
   function toggleAccountTools(): void {
     setAccountToolsCollapsed((current) => {
       const next = !current;
@@ -894,7 +905,7 @@ export function App(): React.JSX.Element {
            <button role="menuitem" onClick={() => void closeOtherTabs(tabMenu.id)}><Icon name="close" size={14} />关闭其他标签</button>
            <button role="menuitem" onClick={() => { setTabMenu(null); void closeTab(tabMenu.id); }}><Icon name="trash" size={14} />关闭此标签</button>
          </div>}
-         <div className="addressbar"><span className="address-lock" title="账号浏览器页面" aria-hidden="true"><Icon name="link" size={15} /></span><input aria-label="网页地址" value={address} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void navigateActive(); }} placeholder={activeId ? '输入 HTTP/HTTPS 地址并回车' : '打开账号后可输入网页地址'} disabled={!activeId} /><button title="打开当前地址" onClick={() => void navigateActive()} disabled={!activeId || !address.trim()}><Icon name="arrow-right" size={14} /><span className="button-label">打开</span></button></div>
+         <div className="addressbar"><span className="address-lock" title="账号浏览器页面" aria-hidden="true"><Icon name="link" size={15} /></span><input aria-label="网页地址" value={address} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void navigateActive(); }} placeholder={activeId ? '输入 HTTP/HTTPS 地址并回车' : '打开账号后可输入网页地址'} disabled={!activeId} /><button title="打开当前地址" onClick={() => void navigateActive()} disabled={!activeId || !address.trim()}><Icon name="arrow-right" size={14} /><span className="button-label">打开</span></button>{activeAccount?.platform === 'doubao' && <button className="doubao-history-button" aria-label="一键清理豆包历史会话" title={`清理 ${activeAccount.name} 的全部会话及关联作品，删除前确认数量`} disabled={busy} onClick={() => void clearDoubaoHistory()}><Icon name="trash" size={14} /><span>一键清理</span></button>}</div>
         <div className={`view-grid ${settings?.dualView ? 'dual' : ''}`}>
           <div ref={primaryRef} className="view-slot">{!activeId && <EmptyState onAdd={newAccount} />}</div>
           {settings?.dualView && <div ref={secondaryRef} className="view-slot secondary"><select value={secondaryId ?? ''} onChange={(event) => { const id = event.target.value || null; setSecondaryId(id); void window.workbench.browser.activate(activeId, id); }}><option value="">选择第二账号</option>{openTabs.filter((id) => id !== activeId).map((id) => <option key={id} value={id}>{accountName(id)}</option>)}</select></div>}

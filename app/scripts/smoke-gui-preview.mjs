@@ -260,6 +260,7 @@ async function main() {
       externalLoginStart: () => ok(undefined), externalLoginSync: () => ok({ cookies: 0 }), externalLoginClose: () => ok(undefined), externalLoginStatus: () => ok({ running: false }), externalLoginState: () => ok({ running: false, loggedIn: false, cookieCount: 0, message: 'fixture' }),
       batchLoginCalibrateEmbedded: () => ok({ message: 'fixture', manual: false, readyToSync: false }), batchLoginCalibrate: () => ok({ message: 'fixture', manual: false, readyToSync: false }),
       batchLoginFillEmbedded: () => ok({ message: 'fixture', manual: false, readyToSync: false }), batchLoginFill: () => ok({ message: 'fixture', manual: false, readyToSync: false }),
+      clearDoubaoHistory: async (accountId) => { (window.__fixtureHistoryCalls ||= []).push(accountId); await new Promise(resolve => setTimeout(resolve, 100)); return ok({ ok: false, count: 0, message: '已取消清理，未执行删除' }); },
       dolaTask: () => ok({}), setDoubaoDuration: () => ok({}), sendDoubao15sPrompt: () => ok({}), startDoubaoCreationScan: () => ok({}), startJimengOriginal: () => ok({})
     };
     const mediaApi = {
@@ -434,6 +435,12 @@ async function main() {
     }
     for (let attempt = 0; attempt < 80 && !document.querySelector('.account-card.selected'); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
     if (!document.querySelector('.account-card.selected')) throw new Error('fixture account did not become active');
+    const historyButton = document.querySelector('[aria-label="一键清理豆包历史会话"]');
+    if (!historyButton || historyButton.textContent.trim() !== '一键清理') throw new Error('Doubao one-click history button missing');
+    historyButton.click();
+    await waitFor(() => historyButton.disabled, 'history button must disable while cleanup is in progress');
+    await waitFor(() => !historyButton.disabled && document.querySelector('.statusbar')?.textContent.includes('已取消清理'), 'history cancellation status not displayed');
+    if (window.__fixtureHistoryCalls?.length !== 1 || window.__fixtureHistoryCalls[0] !== ${JSON.stringify(activeAccount.id)}) throw new Error('history cleanup targeted another account or repeated');
     const activeCard = document.querySelector('.account-card.selected');
     activeCard?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     await waitFor(() => Boolean(document.querySelector('.fingerprint-box')), 'fingerprint editor did not open');
@@ -550,6 +557,7 @@ async function main() {
       modalChecks,
       libraryRefresh,
       fingerprintEditor,
+      historyCleanup: { accountBound: true, cancellationShown: true, busyDisabled: true },
       dolaTaskChecks,
       nativeDownloadNotice,
       menuRect: menuRect ? { width: menuRect.width, height: menuRect.height, left: menuRect.left, top: menuRect.top } : null,

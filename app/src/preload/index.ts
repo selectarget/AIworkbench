@@ -4,6 +4,7 @@ import type { AppSettings, BrowserNavigationState, ExternalBrowserLayout, Workbe
 // Sandboxed Electron preloads cannot require Rollup's generated relative chunks.
 // Keep these runtime channel names local so this entry is emitted as one file.
 const channels = {
+  browserClearDoubaoHistory: 'browser:clear-doubao-history',
   diagnosticsExport: 'diagnostics:export', configExport: 'config:export', configRestore: 'config:restore', configOpenBackups: 'config:open-backups',
   mediaPause: 'media:pause', mediaResume: 'media:resume', mediaPreparePreview: 'media:prepare-preview', mediaRefresh: 'media:refresh',
   accountsList: 'accounts:list', accountsCreate: 'accounts:create', accountsUpdate: 'accounts:update',
@@ -44,6 +45,7 @@ const api: WorkbenchApi = {
     setLayout: (layout) => invoke(channels.browserLayout, layout), applyProxy: (accountId) => invoke(channels.browserApplyProxy, accountId),
     openMany: (ids) => invoke(channels.browserOpenMany, ids), closeMany: (ids) => invoke(channels.browserCloseMany, ids), refreshMany: (ids) => invoke(channels.browserRefreshMany, ids),
     clearSession: (id, kind) => invoke(channels.browserClearSession, { id, kind }), testProxy: (id) => invoke(channels.browserTestProxy, id), startJimengOriginal: (accountId) => invoke(channels.browserStartJimengOriginal, accountId), startDoubaoCreationScan: (accountId) => invoke(channels.browserStartDoubaoCreationScan, accountId), sendDoubao15sPrompt: (accountId) => invoke(channels.browserSendDoubao15sPrompt, accountId), setDoubaoDuration: (accountId, duration) => invoke(channels.browserSetDoubaoDuration, { accountId, duration }),
+    clearDoubaoHistory: (accountId) => invoke(channels.browserClearDoubaoHistory, accountId),
     externalLoginStart: (accountId, layout?: ExternalBrowserLayout) => invoke(channels.externalLoginStart, { accountId, layout }), externalLoginStatus: (accountId) => invoke(channels.externalLoginStatus, accountId), externalLoginState: (accountId) => invoke(channels.externalLoginState, accountId), dolaLoginState: (accountId) => invoke(channels.dolaLoginState, accountId), externalDolaLoginState: (accountId) => invoke(channels.externalDolaLoginState, accountId), externalBrowserOpen: (accountId) => invoke(channels.externalBrowserOpen, accountId),
     externalLoginSync: (accountId) => invoke(channels.externalLoginSync, accountId), externalLoginClose: (accountId) => invoke(channels.externalLoginClose, accountId),
     batchLoginFill: (accountId, email, password, platform) => invoke(channels.batchLoginFill, { accountId, email, password, platform }), batchLoginCalibrate: (accountId, platform) => invoke(channels.batchLoginCalibrate, { accountId, platform }), batchLoginFillEmbedded: (accountId, email, password, platform) => invoke(channels.batchLoginFillEmbedded, { accountId, email, password, platform }), batchLoginCalibrateEmbedded: (accountId, platform) => invoke(channels.batchLoginCalibrateEmbedded, { accountId, platform }),

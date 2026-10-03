@@ -1,4 +1,5 @@
 export const channels = {
+  browserClearDoubaoHistory: 'browser:clear-doubao-history',
   diagnosticsExport: 'diagnostics:export', configExport: 'config:export', configRestore: 'config:restore', configOpenBackups: 'config:open-backups',
   mediaPause: 'media:pause', mediaResume: 'media:resume', mediaPreparePreview: 'media:prepare-preview', mediaRefresh: 'media:refresh',
   accountsList: 'accounts:list', accountsCreate: 'accounts:create', accountsBatchCreate: 'accounts:batch-create', accountsUpdate: 'accounts:update',

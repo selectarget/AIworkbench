@@ -533,6 +533,7 @@ export interface WorkbenchApi {
     testProxy(accountId: string): Promise<ApiResult<ProxyTestResult>>;
     startJimengOriginal(accountId: string): Promise<ApiResult<{ ok: boolean; message: string }>>;
     startDoubaoCreationScan(accountId: string): Promise<ApiResult<{ ok: boolean; message: string; count?: number }>>;
+    clearDoubaoHistory(accountId: string): Promise<ApiResult<DoubaoHistoryCleanupResult>>;
     sendDoubao15sPrompt(accountId: string): Promise<ApiResult<DoubaoPromptResult>>;
     setDoubaoDuration(accountId: string, duration: DoubaoDuration): Promise<ApiResult<DoubaoDurationResult>>;
     externalLoginStart(accountId: string, layout?: ExternalBrowserLayout): Promise<ApiResult<{ port: number }>>;
@@ -661,3 +662,4 @@ export interface WorkbenchApi {
 
 export type DownloadFile = { path: string; relativePath: string; name: string; size: number; modifiedAt: string; type: 'image' | 'video' | 'other'; previewUrl?: string; account?: string; platform?: PlatformId };
 export type UpdateInfo = { enabled: boolean; hasUpdate: boolean; currentVersion: string; latestVersion?: string; releaseUrl?: string; target?: string; reason?: string };
+export type DoubaoHistoryCleanupResult = { ok: boolean; message: string; count: number; submitted?: boolean };

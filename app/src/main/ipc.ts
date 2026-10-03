@@ -107,6 +107,7 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
   register(window, channels.browserTestProxy, idSchema, (id) => browser.testProxy(id));
   register(window, channels.browserStartJimengOriginal, idSchema, (id) => browser.startJimengOriginal(id));
   register(window, channels.browserStartDoubaoCreationScan, idSchema, (id) => browser.startDoubaoCreationScan(id));
+  register(window, channels.browserClearDoubaoHistory, idSchema, (id) => browser.clearDoubaoHistory(id));
   register(window, channels.browserSendDoubao15sPrompt, idSchema, (id) => browser.sendDoubao15sPrompt(id));
   register(window, channels.browserSetDoubaoDuration, z.object({ accountId: idSchema, duration: z.union([z.literal(15), z.literal(30)]) }), ({ accountId, duration }) => browser.setDoubaoDuration(accountId, duration));
   register(window, channels.proxyImportSubscription, z.object({ accountId: idSchema, url: z.string().url().optional() }), ({ accountId, url }) => proxy.importSubscription(accountId, url));

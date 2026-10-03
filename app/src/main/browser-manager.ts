@@ -1,6 +1,9 @@
 import { app, BrowserWindow, WebContentsView, dialog, session, shell, type DownloadItem, type Event as ElectronEvent, type Rectangle, type WebContents } from 'electron';
 import { basename, extname, join, resolve } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import type { DoubaoHistoryCleanupResult } from '../shared/contracts';
+import { buildDoubaoHistoryScript, DOUBAO_HISTORY_URL, isDoubaoHistoryUrl, type DoubaoHistoryPageResult } from './doubao-history';
 import type { Account, BatchLoginPlatform, BrowserDiagnostic, DolaResourceReference, DoubaoDuration, DoubaoDurationResult, DoubaoPromptResult, DolaClickPoint, DolaClickTarget, DolaLoginStep, DolaReferenceKind, DolaReferenceUploadResult, DolaReferenceUploadStatus, DolaVideoTaskResult, NativeDownloadNotice, PlatformId, ProxyTestResult, SessionDataKind, StorageImportBundle, ViewLayout } from '../shared/contracts';
 import { channels } from '../shared/channels';
 import { adapters, responsePatchHeaders } from './adapters';
@@ -231,6 +234,7 @@ function isDolaCompletionUrl(rawUrl: string): boolean {
 export class BrowserManager {
   private readonly entries = new Map<string, Entry>();
   private readonly opening = new Map<string, OpeningTask>();
+  private readonly clearingDoubaoHistory = new Set<string>();
   private readonly loginPopups = new Map<string, Set<BrowserWindow>>();
   private primaryId: string | null = null;
   private secondaryId: string | null = null;
@@ -960,6 +964,109 @@ export class BrowserManager {
     const result = await entry.view.webContents.executeJavaScript(`typeof window.__AIAM_DOUBAO_CREATION_SCAN_TO_RESOURCE_PANEL__ === 'function' ? window.__AIAM_DOUBAO_CREATION_SCAN_TO_RESOURCE_PANEL__() : { ok: false, count: 0 }`, true) as { ok?: boolean; count?: number; navigated?: boolean } | undefined;
     if (!result || result.navigated) return { ok: false, message: '已打开豆包“我的创作”，请稍后再次点击扫描' };
     return result.ok ? { ok: true, count: Number(result.count) || 0, message: `已扫描 ${Number(result.count) || 0} 个豆包创作原视频，请查看素材流` } : { ok: false, count: Number(result.count) || 0, message: '未找到平台明确的原视频下载流，请确认“我的创作”页面已加载' };
+  }
+  async clearDoubaoHistory(accountId: string): Promise<DoubaoHistoryCleanupResult> {
+    const account = this.account(accountId);
+    if (account.platform !== 'doubao') throw new Error('仅豆包账号支持历史会话清理');
+    const entry = this.entries.get(accountId);
+    if (!entry || entry.view.webContents.isDestroyed()) throw new Error('请先打开豆包账号页面');
+    if (this.clearingDoubaoHistory.has(accountId)) throw new Error('此账号正在清理历史会话，请勿重复操作');
+    this.clearingDoubaoHistory.add(accountId);
+    const record = (stage: string, result?: DoubaoHistoryCleanupResult): void => {
+      this.networkDiagnosticSink?.(result && !result.ok ? 'warn' : 'info',
+        `[doubao-history] account=${accountId} stage=${stage}${result ? ` ok=${result.ok} count=${result.count} submitted=${result.submitted === true} message=${result.message}` : ''}`);
+    };
+    const showFailure = async (result: DoubaoHistoryCleanupResult): Promise<void> => {
+      if (this.window.isDestroyed()) return;
+      await dialog.showMessageBox(this.window, {
+        type: 'warning', title: result.submitted ? '请核对清理结果' : '历史清理未执行', message: result.message,
+        detail: result.submitted ? '请先在豆包页面核对结果，不要重复点击清理。' : '未执行删除。可以在历史管理页手动操作，或检查登录状态后重试。',
+        buttons: ['知道了'], noLink: true
+      });
+    };
+    const contents = entry.view.webContents;
+    const token = randomUUID();
+    const unchanged = (): boolean => this.entries.get(accountId) === entry && !contents.isDestroyed()
+      && this.account(accountId).platform === 'doubao' && isDoubaoHistoryUrl(contents.getURL());
+    const readResult = (value: unknown): DoubaoHistoryCleanupResult => {
+      const result = value as Partial<DoubaoHistoryCleanupResult> | null;
+      if (!result || typeof result.ok !== 'boolean' || typeof result.message !== 'string'
+        || !Number.isSafeInteger(result.count) || result.count! < 0) {
+        throw new Error('豆包页面未返回有效清理结果，已停止操作');
+      }
+      return { ok: result.ok, count: result.count!, message: result.message, submitted: result.submitted === true };
+    };
+    const runPhase = async (phase: 'prepare' | 'delete' | 'verify', count = 0): Promise<DoubaoHistoryCleanupResult> => {
+      const deadline = Date.now() + 30_000;
+      const clicked = new Set<string>();
+      while (Date.now() < deadline) {
+        if (!unchanged()) throw new Error('账号页面已变化，已停止清理，请在页面核对');
+        const value = await withTimeout(contents.executeJavaScript(buildDoubaoHistoryScript(phase, token, count, Math.min(15_000, deadline - Date.now()), true), true), 20_000, '清理页面响应超时，请在豆包页面核对；不会自动重试') as DoubaoHistoryPageResult;
+        if (!value?.action) return readResult(value);
+        const { kind, xRatio, yRatio } = value.action;
+        const allowed = phase === 'prepare' ? ['menu', 'batch', 'loaded', 'all'] : phase === 'verify' ? ['menu', 'batch'] : ['remove', 'confirm'];
+        if (!allowed.includes(kind) || !Number.isFinite(xRatio) || !Number.isFinite(yRatio) || xRatio <= 0 || xRatio >= 1 || yRatio <= 0 || yRatio >= 1) throw new Error('页面点击目标无效，已停止清理');
+        // A delayed UI update may request the same action again. Never repeat
+        // a click: only poll for its resulting state, especially after Delete.
+        if (!clicked.has(kind)) {
+          if (!unchanged()) throw new Error('账号页面已变化，已停止清理');
+          clicked.add(kind);
+          record(`click-${kind}`);
+          await new Promise<void>((resolve) => setTimeout(resolve, 150));
+          if (!unchanged()) throw new Error('账号页面已变化，已停止清理');
+          await this.dispatchDolaNativeClick(contents, { xRatio, yRatio } as DolaClickPoint);
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      }
+      return { ok: false, count: 0, submitted: phase === 'verify' || clicked.has('remove'), message: phase === 'prepare' ? '历史页面准备超时，未执行删除，请稍后重试' : '已提交删除，结果尚未确认，请在豆包页面核对；不会自动重试' };
+    };
+    try {
+      record('navigate');
+      await withTimeout(contents.loadURL(DOUBAO_HISTORY_URL), 20_000, '豆包历史管理页面加载超时');
+      if (!unchanged()) throw new Error('账号页面已变化，未执行删除');
+      record('prepare');
+      const prepared = await runPhase('prepare');
+      record('prepared', prepared);
+      if (!prepared.ok) { await showFailure(prepared); return prepared; }
+      if (prepared.count === 0) { const empty = { ...prepared, submitted: false }; record('result', empty); return empty; }
+      if (!unchanged() || this.window.isDestroyed()) throw new Error('账号页面已变化，未执行删除');
+      const confirmation = await dialog.showMessageBox(this.window, {
+        type: 'warning', title: '清理豆包全部历史会话',
+        message: `删除“${account.name}”的全部 ${prepared.count} 个历史会话？`,
+        detail: '会话及关联的线上作品将一起删除，无法撤销。已下载到电脑的文件会保留。仅清理此豆包账号。',
+        buttons: ['删除全部会话', '取消'], defaultId: 1, cancelId: 1, noLink: true
+      });
+      if (confirmation.response !== 0) { record('cancelled'); return { ok: false, count: 0, message: '已取消清理，未执行删除' }; }
+      if (!unchanged()) throw new Error('确认期间账号页面已变化，未执行删除，请重新操作');
+      record('confirmed-delete');
+      let result = await runPhase('delete', prepared.count);
+      record('page-result', result);
+      if (result.ok && result.count !== prepared.count) throw new Error('删除结果数量不一致，请在豆包页面核对；不会自动重试');
+      if (result.submitted) {
+        // A failed bulk-delete toast can coexist with successful removal of
+        // ordinary threads (the undeletable main conversation is retained).
+        // Refresh once and read the native total, never submit deletion again.
+        try {
+          if (!unchanged()) throw new Error('账号页面已变化');
+          record('verify-refresh');
+          await withTimeout(contents.loadURL(DOUBAO_HISTORY_URL), 20_000, '结果核验页面加载超时');
+          result = await runPhase('verify', prepared.count);
+          if (result.ok && result.count !== prepared.count) throw new Error('核验结果数量不一致');
+          if (!result.ok) result = { ...result, submitted: true };
+        } catch (error) {
+          record('verify-unavailable', { ok: false, count: 0, submitted: true, message: error instanceof Error ? error.message : String(error) });
+          result = { ok: false, count: 0, submitted: true, message: '已提交删除，但未能核验最终结果，请在豆包页面核对；不会自动重试' };
+        }
+      }
+      record('result', result);
+      if (!result.ok) await showFailure(result);
+      return result;
+    } catch (error) {
+      this.networkDiagnosticSink?.('warn', `[doubao-history] account=${accountId} stage=exception message=${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    } finally {
+      this.clearingDoubaoHistory.delete(accountId);
+    }
   }
   async sendDoubao15sPrompt(accountId: string): Promise<DoubaoPromptResult> {
     const account = this.account(accountId);

@@ -6,7 +6,7 @@
   "author": "AI创作工作台",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
@@ -19,6 +19,7 @@
     "smoke:platform-pages": "npm run build && node node_modules/electron/cli.js scripts/smoke-platform-pages.mjs",
     "smoke:site-adapters": "npm run build && node node_modules/electron/cli.js scripts/smoke-site-adapters.mjs",
     "smoke:task-workflows": "npm run build && node node_modules/electron/cli.js scripts/smoke-task-workflows.mjs",
+    "smoke:doubao-history": "npm run build && node node_modules/electron/cli.js scripts/smoke-doubao-history.mjs",
     "smoke:video-notice": "npm run build && node node_modules/electron/cli.js scripts/smoke-video-notice.mjs",
     "smoke:storage-import": "npm run build && node node_modules/electron/cli.js scripts/smoke-storage-import.mjs",
     "smoke:proxy-runtime": "node scripts/smoke-proxy-runtime.mjs",

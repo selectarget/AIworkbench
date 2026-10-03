@@ -22,12 +22,179 @@ vi.mock('electron', () => ({
     destroy(): void { this.destroyed = true; this.emit('closed'); }
   },
   WebContentsView: class {},
-  dialog: {},
+  dialog: { showMessageBox: vi.fn() },
   session: { fromPartition: vi.fn() },
   shell: {}
 }));
 
 import { BrowserManager, classifyNativeDownload, dolaFallbackReferer, inspectDolaCompletionBody, isDolaExternalVideoUrl, ProgrammaticDownloadGuard } from '../src/main/browser-manager';
+import { dialog } from 'electron';
+import { DOUBAO_HISTORY_URL, isDoubaoHistoryUrl } from '../src/main/doubao-history';
+
+describe('Doubao history cleanup confirmation', () => {
+  function fixture(platform = 'doubao') {
+    const account = { id: 'doubao_a', name: '测试豆包账号', platform };
+    const window = { isDestroyed: () => false };
+    const manager = new BrowserManager(window as never, { list: () => [account] } as never, {} as never);
+    let url = DOUBAO_HISTORY_URL;
+    const contents = {
+      isDestroyed: vi.fn(() => false), getURL: () => url,
+      loadURL: vi.fn(async (value: string) => { url = value; }),
+      executeJavaScript: vi.fn().mockResolvedValueOnce({ ok: true, count: 51, message: '等待确认' })
+        .mockResolvedValueOnce({ ok: true, count: 51, submitted: true, message: '已删除' })
+        .mockResolvedValueOnce({ ok: true, count: 51, submitted: true, message: '已核验：历史会话已清空' })
+    };
+    const entries = (manager as unknown as { entries: Map<string, unknown> }).entries;
+    entries.set(account.id, { view: { webContents: contents }, accountId: account.id });
+    vi.mocked(dialog.showMessageBox).mockReset();
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 1, checkboxChecked: false });
+    return { manager, account, window, contents, entries, navigate: (value: string) => { url = value; } };
+  }
+  it('uses the fixed history URL and cancels without executing deletion', async () => {
+    const f = fixture();
+    const result = await f.manager.clearDoubaoHistory(f.account.id);
+    expect(result.message).toContain('已取消');
+    expect(f.contents.loadURL).toHaveBeenCalledWith(DOUBAO_HISTORY_URL);
+    expect(f.contents.executeJavaScript).toHaveBeenCalledTimes(1);
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(f.window, expect.objectContaining({
+      message: expect.stringContaining('全部 51 个'), defaultId: 1, cancelId: 1,
+      detail: expect.stringContaining('线上作品')
+    }));
+  });
+  it('deletes only after a confirmation identifying the account and total', async () => {
+    const f = fixture();
+    vi.mocked(dialog.showMessageBox).mockImplementation(async () => {
+      expect(f.contents.executeJavaScript).toHaveBeenCalledTimes(1);
+      return { response: 0, checkboxChecked: false };
+    });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ ok: true, count: 51 });
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(f.window, expect.objectContaining({ message: expect.stringContaining(f.account.name) }));
+    expect(f.contents.executeJavaScript).toHaveBeenCalledTimes(3);
+    expect(f.contents.executeJavaScript.mock.calls[1]?.[0]).toContain('"delete"');
+    expect(f.contents.executeJavaScript.mock.calls[2]?.[0]).toContain('})("verify",');
+    expect(f.contents.loadURL).toHaveBeenCalledTimes(2);
+  });
+  it('stops if the account page is replaced during confirmation', async () => {
+    const f = fixture();
+    vi.mocked(dialog.showMessageBox).mockImplementation(async () => {
+      f.entries.set(f.account.id, {});
+      return { response: 0, checkboxChecked: false };
+    });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).rejects.toThrow('页面已变化');
+    expect(f.contents.executeJavaScript).toHaveBeenCalledTimes(1);
+  });
+  it('stops if confirmation outlives navigation to another page', async () => {
+    const f = fixture();
+    vi.mocked(dialog.showMessageBox).mockImplementation(async () => {
+      f.navigate('https://www.doubao.com/chat/');
+      return { response: 0, checkboxChecked: false };
+    });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).rejects.toThrow('页面已变化');
+    expect(f.contents.executeJavaScript).toHaveBeenCalledTimes(1);
+  });
+  it('rejects malformed counts without presenting a destructive confirmation', async () => {
+    const f = fixture();
+    f.contents.executeJavaScript.mockReset().mockResolvedValue({ ok: true, count: -1, message: 'bad' });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).rejects.toThrow('有效清理结果');
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+  it('rejects other platforms before navigating', async () => {
+    const f = fixture('dola');
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).rejects.toThrow('仅豆包');
+    expect(f.contents.loadURL).not.toHaveBeenCalled();
+  });
+  it('reports an already-cleared account without confirmation or deletion', async () => {
+    const f = fixture();
+    f.contents.executeJavaScript.mockReset().mockResolvedValue({ ok: true, count: 0, submitted: true, message: '已核验：可批量清理的历史会话已清空' });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ ok: true, count: 0, submitted: false });
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(f.contents.executeJavaScript).toHaveBeenCalledTimes(1);
+  });
+  it('blocks concurrent calls and releases the guard after cancellation', async () => {
+    const f = fixture();
+    const pending = f.manager.clearDoubaoHistory(f.account.id);
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).rejects.toThrow('勿重复');
+    await pending;
+    f.contents.executeJavaScript.mockReset().mockResolvedValue({ ok: false, count: 0, message: '页面结构变化' });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ message: '页面结构变化' });
+  });
+  it('never retries a submitted deletion with an unconfirmed outcome', async () => {
+    const f = fixture();
+    f.contents.executeJavaScript.mockReset().mockResolvedValueOnce({ ok: true, count: 51, message: '待确认' })
+      .mockResolvedValueOnce({ ok: false, count: 0, submitted: true, message: '请在页面核对' })
+      .mockResolvedValueOnce({ ok: false, count: 0, submitted: true, message: '仍有 3 个可清理会话' });
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ ok: false, submitted: true });
+    expect(f.contents.executeJavaScript).toHaveBeenCalledTimes(3);
+    expect(f.contents.executeJavaScript.mock.calls.filter(([script]) => script.includes('})("delete",'))).toHaveLength(1);
+  });
+  it('reports verified success despite an erroneous platform toast, without a second delete', async () => {
+    const f = fixture();
+    const sink = vi.fn(); f.manager.setNetworkDiagnosticSink(sink);
+    f.contents.executeJavaScript.mockReset().mockResolvedValueOnce({ ok: true, count: 51, message: '待确认' })
+      .mockResolvedValueOnce({ ok: false, count: 0, submitted: true, message: '豆包未完成删除：删除失败，请稍后再试' })
+      .mockResolvedValueOnce({ ok: true, count: 51, submitted: true, message: '已核验：可批量清理的历史会话已清空；豆包保留的主对话不支持批量删除' });
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ ok: true, message: expect.stringContaining('主对话') });
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(f.contents.loadURL).toHaveBeenCalledTimes(2);
+    expect(f.contents.executeJavaScript.mock.calls.filter(([script]) => script.includes('})("delete",'))).toHaveLength(1);
+    expect(sink).toHaveBeenCalledWith('warn', expect.stringContaining('stage=page-result ok=false'));
+    expect(sink).toHaveBeenCalledWith('info', expect.stringContaining('stage=result ok=true'));
+  });
+  it('keeps an unavailable verification ambiguous and never retries deletion', async () => {
+    const f = fixture();
+    f.contents.executeJavaScript.mockReset().mockResolvedValueOnce({ ok: true, count: 51, message: '待确认' })
+      .mockResolvedValueOnce({ ok: true, count: 51, submitted: true, message: '删除成功' })
+      .mockRejectedValueOnce(new Error('网络超时'));
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ ok: false, submitted: true, message: expect.stringContaining('未能核验') });
+    expect(f.contents.executeJavaScript.mock.calls.filter(([script]) => script.includes('})("delete",'))).toHaveLength(1);
+  });
+  it('rejects any Delete action requested during read-only verification', async () => {
+    const f = fixture();
+    f.contents.executeJavaScript.mockReset().mockResolvedValueOnce({ ok: true, count: 51, message: '待确认' })
+      .mockResolvedValueOnce({ ok: false, count: 0, submitted: true, message: '删除失败' })
+      .mockResolvedValueOnce({ ok: false, count: 0, message: 'bad', action: { kind: 'remove', xRatio: 0.9, yRatio: 0.9 } });
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ ok: false, submitted: true, message: expect.stringContaining('未能核验') });
+  });
+  it('accepts only the actual HTTPS Doubao history route', () => {
+    expect(isDoubaoHistoryUrl(DOUBAO_HISTORY_URL)).toBe(true);
+    expect(isDoubaoHistoryUrl('https://doubao.com/chat/thread/list/')).toBe(true);
+    for (const url of ['http://www.doubao.com/chat/thread/list', 'https://www.doubao.com.evil.test/chat/thread/list', 'https://evil.test@www.doubao.com/chat/thread/list', 'https://www.doubao.com/chat/']) {
+      expect(isDoubaoHistoryUrl(url)).toBe(false);
+    }
+  });
+  it('uses native page input and does not repeat a click while UI state is pending', async () => {
+    const f = fixture();
+    const sendCommand = vi.fn(async () => undefined);
+    Object.assign(f.contents, { debugger: { isAttached: () => true, sendCommand } });
+    const steps = [
+      { ok: false, count: 0, message: 'menu', action: { kind: 'menu', xRatio: 0.9, yRatio: 0.1 } },
+      { ok: false, count: 0, message: 'menu', action: { kind: 'menu', xRatio: 0.9, yRatio: 0.1 } },
+      { ok: true, count: 51, message: '待确认' }
+    ];
+    f.contents.executeJavaScript.mockReset().mockImplementation(async (script: string) => script.startsWith('({ width:') ? { width: 1000, height: 600 } : steps.shift());
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ message: '已取消清理，未执行删除' });
+    expect(sendCommand.mock.calls.map(call => call[0])).toEqual(['Input.dispatchMouseEvent', 'Input.dispatchMouseEvent', 'Input.dispatchMouseEvent']);
+    expect(sendCommand).toHaveBeenCalledWith('Input.dispatchMouseEvent', expect.objectContaining({ type: 'mousePressed', x: 900, y: 60 }));
+  });
+  it('never accepts a Delete click request during preparation', async () => {
+    const f = fixture();
+    f.contents.executeJavaScript.mockReset().mockResolvedValue({ ok: false, count: 0, message: 'bad', action: { kind: 'remove', xRatio: 0.9, yRatio: 0.9 } });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).rejects.toThrow('点击目标无效');
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+  it('records preparation failure and displays it without a delete confirmation', async () => {
+    const f = fixture();
+    const sink = vi.fn(); f.manager.setNetworkDiagnosticSink(sink);
+    f.contents.executeJavaScript.mockReset().mockResolvedValue({ ok: false, count: 0, message: '全选入口尚未出现' });
+    await expect(f.manager.clearDoubaoHistory(f.account.id)).resolves.toMatchObject({ ok: false });
+    expect(sink).toHaveBeenCalledWith('warn', expect.stringContaining('stage=prepared ok=false'));
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(f.window, expect.objectContaining({ title: '历史清理未执行', message: '全选入口尚未出现', buttons: ['知道了'] }));
+  });
+});
 
 describe('account runtime budget', () => {
   it('prevents allocating another account while allowing an already open one', async () => {
