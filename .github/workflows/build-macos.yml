@@ -2,6 +2,12 @@ name: macOS build and package audit
 
 on:
   workflow_dispatch:
+    inputs:
+      upload_artifacts:
+        description: Upload unsigned DMGs for testing (retained for 1 day)
+        required: true
+        default: true
+        type: boolean
   push:
     paths:
       - "app/**"
@@ -205,18 +211,20 @@ jobs:
             node scripts/verify-macos-release.mjs "$dmg" "$arch"
           done
 
-      - name: Upload unsigned directory packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-directory-packages
-          path: app/release/**
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Upload unsigned DMGs
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-unsigned-dmgs
           path: app/release/*.dmg
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
+
+      - name: Summarize verified packages
+        shell: bash
+        run: |
+          {
+            echo "## macOS package verification"
+            echo "x64 and arm64 app bundles and DMGs passed build, audit and runtime checks."
+            echo "Automatic push builds do not retain downloadable packages. Run this workflow manually with upload_artifacts enabled to retain DMGs for 1 day."
+          } >> "$GITHUB_STEP_SUMMARY"
