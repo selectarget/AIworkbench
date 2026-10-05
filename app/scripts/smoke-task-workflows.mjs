@@ -154,7 +154,7 @@ async function main() {
   const { buildDolaVideoTaskScript } = await import(
     pathToFileURL(resolve('out/main/dolaTask.js')).href
   );
-  const { buildDoubao15sPromptSendScript, buildDoubaoDurationControlScript } = await import(
+  const { buildDoubao15sPromptSendScript, buildDoubaoDurationControlScript, buildDoubao15sFloatingScript } = await import(
     pathToFileURL(resolve('out/main/doubaoTask.js')).href
   );
   const fixture = await startFixtureServer();
@@ -192,6 +192,15 @@ async function main() {
 
     const doubao = await createView(window, `http://www.doubao.com:${fixture.port}/doubao`);
     views.push(doubao);
+    await evaluate(doubao, buildDoubao15sFloatingScript(), 'Doubao floating tool');
+    await evaluate(doubao, buildDoubao15sFloatingScript(), 'Doubao floating tool idempotence');
+    const floatingState = await evaluate(doubao, `(() => {
+      const panels = document.querySelectorAll('#workbench-doubao-15s');
+      const panel = panels[0]; const collapse = panel?.querySelector('[data-collapse]');
+      collapse?.click(); const hidden = panel?.querySelector('[data-body]').style.display === 'none';
+      collapse?.click(); return { count: panels.length, hidden, expanded: panel?.querySelector('[data-body]').style.display === 'grid' };
+    })()`, 'Doubao floating collapse');
+    assert(floatingState.count === 1 && floatingState.hidden && floatingState.expanded, 'Doubao floating tool duplicated or collapse failed');
     const doubaoResult = await evaluate(
       doubao,
       buildDoubao15sPromptSendScript('fixture Doubao 15 second prompt'),

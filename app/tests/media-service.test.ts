@@ -114,6 +114,25 @@ describe('media download queue', () => {
     await waitFor(() => service.tasks()[0]?.status === 'completed');
     expect(fetchMock.mock.calls[0]?.[0]).toBe(url);
   });
+  it('merges the same Doubao original from different CDN hosts and signing paths', () => {
+    const { service } = setup();
+    const first = service.add('account_1', { type: 'video', url: 'https://v11-vdl.doubao.com/sign1/expiry1/video/tos/cn/tos-cn-v-9ecd54/same-file/', source: 'doubao-video-fallback-api', resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true })!;
+    const second = service.add('account_1', { type: 'video', url: 'https://v26-vdl.doubao.com/sign2/expiry2/video/tos/cn/tos-cn-v-9ecd54/same-file/', source: 'doubao-video-fallback-api', resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true })!;
+    expect(second.id).toBe(first.id);
+    expect([second.url, second.backupUrl, ...(second.alternateUrls ?? [])]).toEqual(expect.arrayContaining([
+      'https://v11-vdl.doubao.com/sign1/expiry1/video/tos/cn/tos-cn-v-9ecd54/same-file/',
+      'https://v26-vdl.doubao.com/sign2/expiry2/video/tos/cn/tos-cn-v-9ecd54/same-file/'
+    ]));
+    expect(service.list()).toHaveLength(1);
+    service.add('account_1', { type: 'video', url: 'https://v26-vdl.doubao.com/sign2/expiry2/video/tos/cn/tos-cn-v-9ecd54/different-file/', source: 'doubao-video-fallback-api', resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true });
+    expect(service.list()).toHaveLength(2);
+  });
+  it('omits low-resolution Doubao previews without dropping originals with unknown dimensions', () => {
+    const { service } = setup();
+    expect(service.add('account_1', { type: 'video', url: 'https://v26-vdl.doubao.com/preview.mp4', width: 384, height: 216, source: 'cdp:doubao' })).toBeNull();
+    expect(service.add('account_1', { type: 'video', url: 'https://v26-vdl.doubao.com/original.mp4', source: 'doubao-video-fallback-api', resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true })).not.toBeNull();
+    expect(service.list()).toHaveLength(1);
+  });
   it('does not label a Doubao playback stream as an original or silently download it', async () => {
     const { service } = setup();
     const resource = service.add('account_1', { type: 'video', url: 'https://v26-vdl.doubao.com/video.mp4?lr=video_gen_no_watermark', source: 'cdp:doubao', confirmedNoWatermark: true })!;

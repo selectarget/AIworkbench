@@ -719,7 +719,7 @@
     return `豆包创作原视频_${String(index + 1).padStart(3, '0')}`;
   }
 
-  async function scanCreationVideosToResourcePanel() {
+  async function scanCreationVideosToResourcePanel(targetResource) {
     if (!isOnCreationPage()) {
       showStatus('正在打开豆包“我的创作”页面，请稍后再点一次扫描');
       location.href = DOUBAO_CREATION_SCAN_URL;
@@ -727,7 +727,11 @@
     }
     showStatus('正在扫描豆包我的创作视频...');
     const allVideoNodes = prioritizeNodesByVisibleOrder((await fetchCreationNodes({ force: true })).filter(isCreationVideoNode));
-    const nodes = allVideoNodes.slice(0, CREATION_VIDEO_RESOURCE_LIMIT);
+    const nodes = targetResource
+      ? allVideoNodes.filter(node =>
+        (targetResource.messageId && node.messageId === targetResource.messageId) ||
+        (targetResource.vid && [node.id, node.key, node.creationTaskId].includes(targetResource.vid))).slice(0, 1)
+      : allVideoNodes.slice(0, CREATION_VIDEO_RESOURCE_LIMIT);
     if (!nodes.length) {
       showStatus('没有扫描到豆包创作视频，请确认当前在“我的创作”页面');
       return { ok: false, count: 0 };
@@ -740,7 +744,8 @@
       const info = infoByNodeId.get(node.id);
       if (!info?.mainUrl) return;
       videos.push({
-        vid: node.key || node.id,
+        vid: targetResource?.vid || node.key || node.id,
+        messageId: node.messageId || '',
         nodeId: node.id,
         title: buildCreationVideoTitle(node, index),
         thumbUrl: node.coverUrl || '',

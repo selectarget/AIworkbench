@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 
 export default defineConfig({
@@ -20,7 +21,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve('src/renderer'),
-    plugins: [react()],
+    plugins: [tailwindcss(), react()],
     resolve: { alias: { '@shared': resolve('src/shared') } }
   }
 });

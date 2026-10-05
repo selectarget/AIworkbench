@@ -52,31 +52,32 @@ const emptyProxy = {
 
 const emptyBrowser = { homeUrl: '', lastUrl: '', zoomFactor: 1, restoreOnStart: true };
 const emptyFingerprint = {
-  enabled: false,
-  seed: '',
+  enabled: true,
+  seed: 'mtwGEg75SyodqjNrmRJChMlh4DOWv-xP',
+  runtimePlatform: 'win32',
+  platform: 'Win32',
   vendor: 'Google Inc.',
-  languages: ['zh-CN', 'zh', 'en'],
+  languages: ['zh-CN', 'zh', 'en-US', 'en'],
   hardwareConcurrency: 8,
   deviceMemory: 8,
   maxTouchPoints: 0,
-  webGlVendor: 'Google Inc.',
-  webGlRenderer: 'ANGLE (Default Renderer)',
-  userAgent: '',
-  platform: '',
-  userAgentDataBrands: '',
-  userAgentDataFullVersionList: '',
+  webGlVendor: 'Google Inc. (Intel)',
+  webGlRenderer: 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)',
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  userAgentDataBrands: '"Not/A)Brand";v="8", "Chromium";v="128"',
+  userAgentDataFullVersionList: '"Not/A)Brand";v="8.0.0.0", "Chromium";v="128.0.0.0"',
   userAgentDataMobile: false,
-  userAgentDataPlatform: '',
-  userAgentDataArchitecture: '',
-  userAgentDataBitness: '',
-  userAgentDataPlatformVersion: '',
+  userAgentDataPlatform: 'Windows',
+  userAgentDataArchitecture: 'x86',
+  userAgentDataBitness: '64',
+  userAgentDataPlatformVersion: '15.0.0',
   screenWidth: 1920,
   screenHeight: 1080,
   deviceScaleFactor: 1,
-  timezone: '',
-  webRtcPolicy: 'default',
-  canvasNoise: false,
-  audioNoise: false,
+  timezone: 'Asia/Shanghai',
+  webRtcPolicy: 'disable_non_proxied_udp',
+  canvasNoise: true,
+  audioNoise: true,
   lastError: ''
 };
 
@@ -203,7 +204,7 @@ const diagnostics = {
     sessionPartition: `persist:account_${account.id}`,
     adapterEnabled: true,
     adapterCapabilities: { domCapture: true, fetchCapture: true, xhrCapture: true, sseCapture: true, cdpNetworkCapture: true, requestModification: account.platform === 'doubao' || account.platform === 'dola', responseModification: account.platform === 'doubao' || account.platform === 'dola', imageParser: true, videoParser: true, dedicatedDownloader: account.platform === 'doubao' || account.platform === 'dola', loginAssist: account.platform === 'dola' || account.platform === 'higgsfield', taskDurations: account.platform === 'doubao' || account.platform === 'dola' ? [15, 30] : [] },
-    fingerprint: { enabled: false, seedPresent: false, lastAppliedAt: undefined, lastError: undefined },
+    fingerprint: { enabled: true, seedPresent: true, lastAppliedAt: undefined, lastError: undefined },
     proxy: { enabled: false, mode: 'direct', status: 'idle', localPort: undefined, pid: undefined, selectedNodeName: '', nodeCount: 0, error: undefined }
   }))
 };
@@ -368,70 +369,11 @@ async function main() {
       await closeModal();
       return buttonLabel;
     };
-    const openTools = async () => {
-      const current = document.querySelector('.toolbar-menu');
-      if (!current) document.querySelector('.toolbar-more > button')?.click();
-      await waitFor(() => Boolean(document.querySelector('.toolbar-menu')), 'toolbar menu did not open');
-    };
-    const checkToolModal = async (label, expectedText) => {
-      await openTools();
-      clickExact(label);
-      await waitFor(() => Boolean(document.querySelector('.modal h2')), label + ' modal did not open');
-      await waitFor(() => window.__fixtureLayout?.occluded === true, 'modal did not hide native views');
-      const text = document.querySelector('.modal')?.textContent || '';
-      if (!text.includes(expectedText)) throw new Error(label + ' modal missing ' + expectedText);
-      await closeModal();
-      return label;
-    };
-    const checkDolaTaskModal = async () => {
-      await openTools();
-      clickExact('Dola 批量登录');
-      await waitFor(() => Boolean(document.querySelector('.modal h2')), 'Dola task modal did not open');
-      const modal = document.querySelector('.modal');
-      const text = modal?.textContent || '';
-      const buttons = [...(modal?.querySelectorAll('button') || [])].map((node) => node.textContent?.trim()).filter(Boolean);
-      const selects = [...(modal?.querySelectorAll('select') || [])].map((node) => [...node.options].map((option) => option.textContent?.trim()).filter(Boolean));
-      const taskText = ['Dola 视频任务', '任务账号', '快速提交', '选择参考图', '选择参考音频', '选择参考视频', '提交选中账号', '依次提交选中账号'].every((item) => text.includes(item));
-      const durationOptions = selects.some((options) => options.includes('15 秒') && options.includes('30 秒'));
-      const expectedAspectOptions = ['1:1 方形', '3:4 竖幅', '4:3 横幅', '9:16 竖屏', '16:9 横屏', '21:9 超宽'];
-      const aspectOptions = selects.some((options) => expectedAspectOptions.every((option) => options.includes(option)));
-      const taskAccountOptions = selects.some((options) => options.includes('全部 Dola 账号（批量提交）') && options.length >= 3);
-      const submitButton = buttons.includes('提交选中账号') && buttons.includes('依次提交选中账号');
-      const taskAccountSelect = modal?.querySelector('select[aria-label="Dola 任务账号"]');
-      const firstSingleOption = [...(taskAccountSelect?.options || [])].find((option) => option.value !== '__all__');
-      let singleTaskSelection = false;
-      if (taskAccountSelect && firstSingleOption) {
-        taskAccountSelect.value = firstSingleOption.value;
-        taskAccountSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        await waitFor(() => document.querySelector('.dola-task-account-count')?.textContent?.includes('已选 1 个'), 'single Dola task selection did not update');
-        singleTaskSelection = true;
-        if (taskAccountSelect.querySelector('option[value="__all__"]')) {
-          taskAccountSelect.value = '__all__';
-          taskAccountSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          await waitFor(() => document.querySelector('.dola-task-account-count')?.textContent?.includes('已选 '), 'all Dola task selection did not restore');
-        }
-      }
-      const body = modal?.querySelector('.modal-body');
-      const layout = {
-        modalClientWidth: modal?.clientWidth ?? 0,
-        modalScrollWidth: modal?.scrollWidth ?? 0,
-        bodyClientWidth: body?.clientWidth ?? 0,
-        bodyScrollWidth: body?.scrollWidth ?? 0
-      };
-      const noHorizontalOverflow = layout.modalScrollWidth <= layout.modalClientWidth + 1 && layout.bodyScrollWidth <= layout.bodyClientWidth + 1;
-      if (!taskText || !durationOptions || !aspectOptions || !taskAccountOptions || !singleTaskSelection || !submitButton || !noHorizontalOverflow) {
-        throw new Error('Dola task controls/layout incomplete: ' + JSON.stringify({ taskText, durationOptions, aspectOptions, taskAccountOptions, singleTaskSelection, submitButton, noHorizontalOverflow, layout, buttons, selects }));
-      }
-      await closeModal();
-      return { taskText, durationOptions, aspectOptions, taskAccountOptions, singleTaskSelection, submitButton, noHorizontalOverflow, layout };
-    };
     for (let attempt = 0; attempt < 80 && !document.querySelector('.app-shell'); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
     if (!document.querySelector('.app-shell')) throw new Error('app shell did not render');
     if (document.documentElement.dataset.platform === 'windows') {
       const topbarRegion = getComputedStyle(document.querySelector('.topbar')).webkitAppRegion;
-      const actionsRegion = getComputedStyle(document.querySelector('.top-actions')).webkitAppRegion;
-      const buttonRegion = getComputedStyle(document.querySelector('.top-actions button')).webkitAppRegion;
-      if (topbarRegion !== 'drag' || actionsRegion !== 'drag' || buttonRegion !== 'no-drag') throw new Error('window drag regions are incomplete: ' + JSON.stringify({ topbarRegion, actionsRegion, buttonRegion }));
+      if (topbarRegion !== 'drag') throw new Error('window drag regions are incomplete: ' + JSON.stringify({ topbarRegion }));
     }
     for (let attempt = 0; attempt < 80 && !document.querySelector('.account-card.selected'); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
     if (!document.querySelector('.account-card.selected')) throw new Error('fixture account did not become active');
@@ -493,15 +435,8 @@ async function main() {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
     await waitFor(() => document.activeElement?.getAttribute('aria-label') === '搜索账号、分组或备注', 'Ctrl+K did not focus account search');
     const nativeDownloadNotice = document.querySelector('.statusbar')?.textContent || '';
-    const more = document.querySelector('.toolbar-more > button');
-    if (!more) throw new Error('toolbar more button did not render');
-    more.click();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    const authorShop = [...document.querySelectorAll('.toolbar-menu [role="menuitem"]')].find((node) => node.textContent?.trim() === '作者店铺');
-    if (!authorShop) throw new Error('author shop menu item did not render');
-    authorShop.click();
-    await waitFor(() => document.querySelector('.statusbar')?.textContent?.includes('作者店铺'), 'author shop action did not complete');
-    if (document.querySelector('.theme-toggle')) throw new Error('theme toggle should not reintroduce a dark palette');
+    const settingsBtn = document.querySelector('.accounts-panel .panel-title button[aria-label="设置"]');
+    if (!settingsBtn) throw new Error('settings button missing from accounts panel header');
     const lightTheme = document.documentElement.dataset.theme;
     const modalChecks = [];
     modalChecks.push(await checkTopModal('设置', '旧版临时缓存'));
@@ -525,15 +460,6 @@ async function main() {
     };
     const libraryRefresh = await checkLibraryAutoRefresh();
     modalChecks.push('素材库');
-    modalChecks.push(await checkToolModal('登录辅助', '打开登录浏览器'));
-    const dolaTaskChecks = await checkDolaTaskModal();
-    modalChecks.push('Dola 批量登录');
-    modalChecks.push(await checkToolModal('使用指南与快捷键', '从账号到成片'));
-    modalChecks.push(await checkToolModal('Higgsfield 批量登录', 'Higgsfield 批量登录'));
-    modalChecks.push(await checkToolModal('人脸网格', '人脸网格工具'));
-    modalChecks.push(await checkToolModal('迁移 V4.4', 'V4.4 数据迁移'));
-    modalChecks.push(await checkToolModal('诊断', '系统诊断'));
-    await openTools();
     const visible = (selector) => { const node = document.querySelector(selector); if (!node) return false; const rect = node.getBoundingClientRect(); return getComputedStyle(node).display !== 'none' && rect.width > 0 && rect.height > 0; };
     const menuNode = document.querySelector('.toolbar-menu');
     const menuRect = menuNode ? menuNode.getBoundingClientRect() : null;
@@ -544,6 +470,7 @@ async function main() {
     const accountCardsVisible = [...document.querySelectorAll('.account-card')].filter((node) => { const rect = node.getBoundingClientRect(); return getComputedStyle(node).display !== 'none' && rect.width > 0 && rect.height > 0; }).length;
     const workspace = document.querySelector('.workspace');
     const layoutSnapshot = workspace ? { display: getComputedStyle(workspace).display, columns: getComputedStyle(workspace).gridTemplateColumns, rows: getComputedStyle(workspace).gridTemplateRows, clientWidth: workspace.clientWidth, clientHeight: workspace.clientHeight, scrollWidth: workspace.scrollWidth, scrollHeight: workspace.scrollHeight } : null;
+    const tabsRect = document.querySelector('.tabs')?.getBoundingClientRect();
     const panelRects = Object.fromEntries(['.accounts-panel', '.browser-panel', '.media-panel'].map((selector) => { const rect = document.querySelector(selector)?.getBoundingClientRect(); return [selector, rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null]; }));
     return {
       title: document.title,
@@ -553,19 +480,17 @@ async function main() {
       accountCardsVisible,
       mediaCards: document.querySelectorAll('.material-card').length,
       columns: { accounts: visible('.accounts-panel'), browser: visible('.browser-panel'), media: visible('.media-panel') },
-      toolbarMenuItems,
       modalChecks,
       libraryRefresh,
       fingerprintEditor,
       historyCleanup: { accountBound: true, cancellationShown: true, busyDisabled: true },
-      dolaTaskChecks,
       nativeDownloadNotice,
-      menuRect: menuRect ? { width: menuRect.width, height: menuRect.height, left: menuRect.left, top: menuRect.top } : null,
       layoutSnapshot,
       panelRects,
+      tabsHeight: tabsRect?.height || 0,
+      hasToolbarMore: visible('.toolbar-more'),
       hasAddressBar: visible('.addressbar'),
       hasStatusBar: visible('.statusbar'),
-      menuOpen: Boolean(document.querySelector('.toolbar-menu')),
       modalOpen: Boolean(document.querySelector('.modal-backdrop')),
       modalTitle: document.querySelector('.modal h2')?.textContent?.trim() || null
     };
@@ -575,15 +500,14 @@ async function main() {
   if (result.accountCardsVisible < 12) throw new Error(`expected account cards to be visible, received ${result.accountCardsVisible}`);
   if (result.mediaCards < 2) throw new Error(`expected media cards to render, received ${result.mediaCards}`);
   if (!result.columns.accounts || !result.columns.browser || !result.columns.media) throw new Error(`workspace columns are not visible: ${JSON.stringify(result.columns)}`);
-   if (!result.toolbarMenuItems.includes('豆包 15s 设置') || !result.toolbarMenuItems.includes('豆包 30s 设置') || !result.toolbarMenuItems.includes('使用指南与快捷键')) throw new Error(`duration/help tools missing: ${JSON.stringify(result.toolbarMenuItems)}`);
+  if (result.hasAddressBar) throw new Error('addressbar should be removed');
+  if (result.hasToolbarMore) throw new Error('toolbar-more should be removed');
+  if (!result.tabsHeight || result.tabsHeight > 36) throw new Error(`tabs height should be compact (~30px), received ${result.tabsHeight}`);
   if (!result.nativeDownloadNotice.includes('报告.pdf')) throw new Error(`native download notice missing: ${result.nativeDownloadNotice}`);
   if (!result.libraryRefresh?.native || !result.libraryRefresh?.mediaTask || !result.libraryRefresh?.closed) throw new Error(`library refresh lifecycle incomplete: ${JSON.stringify(result.libraryRefresh)}`);
   if (result.fingerprintEditor?.sections !== 3 || !result.fingerprintEditor?.summary || !result.fingerprintEditor?.health) throw new Error(`fingerprint editor checks incomplete: ${JSON.stringify(result.fingerprintEditor)}`);
-  if (!result.toolbarMenuItems.includes('作者店铺')) throw new Error(`author shop tool missing: ${JSON.stringify(result.toolbarMenuItems)}`);
-   if (result.modalChecks.length !== 9) throw new Error(`expected all primary GUI modals to render, received ${JSON.stringify(result.modalChecks)}`);
-   if (!result.menuRect || result.menuRect.width < 250 || result.menuRect.height < 100) throw new Error(`toolbar menu has no visible layout: ${JSON.stringify(result.menuRect)}`);
-   if (result.menuOpen) throw new Error('Escape did not close toolbar menu');
-   if (result.modalOpen) throw new Error(`a modal remained open after GUI smoke: ${result.modalTitle}`);
+  if (!result.modalChecks.includes('设置') || !result.modalChecks.includes('素材库')) throw new Error(`expected settings and library modals to verify, received ${JSON.stringify(result.modalChecks)}`);
+  if (result.modalOpen) throw new Error(`a modal remained open after GUI smoke: ${result.modalTitle}`);
   if (!result.themeRestored || result.lightTheme !== 'light') throw new Error(`white theme did not remain enabled: ${JSON.stringify(result)}`);
 
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -612,6 +536,24 @@ async function main() {
   console.log(`plugins preview image: ${pluginsImage}`);
 
   // Close settings modal
+  await window.webContents.executeJavaScript(`(document.querySelector('.modal header button[aria-label="关闭弹窗"]') || document.querySelector('.modal header button'))?.click(); new Promise(resolve => setTimeout(resolve, 400));`);
+
+  // Open Account Edit modal
+  await window.webContents.executeJavaScript(`document.querySelector('.account-card.selected')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); new Promise(resolve => setTimeout(resolve, 400));`);
+  const accountModalImage = join(dirname(previewPath), `preview-account-modal-${previewWidth}.png`);
+  await window.webContents.capturePage();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  writeFileSync(accountModalImage, (await window.webContents.capturePage()).toPNG());
+  console.log(`account modal preview image: ${accountModalImage}`);
+
+  // Scroll down to fingerprint section and capture
+  await window.webContents.executeJavaScript(`const fpBox = document.querySelector('.fingerprint-box'); if (fpBox) document.querySelector('.modal-body')?.scrollTo({ top: fpBox.offsetTop - 10, behavior: 'instant' }); new Promise(resolve => setTimeout(resolve, 200));`);
+  const fingerprintModalImage = join(dirname(previewPath), `preview-account-fingerprint-${previewWidth}.png`);
+  await window.webContents.capturePage();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  writeFileSync(fingerprintModalImage, (await window.webContents.capturePage()).toPNG());
+  console.log(`fingerprint modal preview image: ${fingerprintModalImage}`);
+
   await window.webContents.executeJavaScript(`(document.querySelector('.modal header button[aria-label="关闭弹窗"]') || document.querySelector('.modal header button'))?.click(); new Promise(resolve => setTimeout(resolve, 400));`);
 
   // Open Video Preview (first card on videos tab)

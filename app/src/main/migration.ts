@@ -112,7 +112,7 @@ function fingerprintFromLegacy(raw: unknown, platform: PlatformId, fallback: Fin
   const source = object(raw); const ua = object(value(source, 'ua')); const js = object(value(source, 'javascriptFingerprint')); const uaData = object(value(js, 'navigatorUserAgentData')); const screen = object(value(source, 'screen')); const network = object(value(source, 'network'));
   const languagesRaw = value(js, 'languages'); const languages = Array.isArray(languagesRaw) ? languagesRaw.map(String).filter(Boolean) : String(languagesRaw ?? '').split(',').map((item) => item.trim()).filter(Boolean);
   return fingerprintSchema.parse({
-    ...fallback, enabled: bool(source, 'enabled'), userAgent: text(ua, 'userAgent') || text(js, 'navigatorUserAgent') || fallback.userAgent,
+    ...fallback, enabled: optionalBool(source, true, 'enabled', 'Enabled'), userAgent: text(ua, 'userAgent') || text(js, 'navigatorUserAgent') || fallback.userAgent,
     platform: text(js, 'platform') || fallback.platform, vendor: text(js, 'vendor') || fallback.vendor, languages: languages.length ? languages : fallback.languages,
     hardwareConcurrency: number(js, fallback.hardwareConcurrency, 'hardwareConcurrency'), deviceMemory: number(js, fallback.deviceMemory, 'deviceMemory'), maxTouchPoints: number(js, fallback.maxTouchPoints, 'maxTouchPoints'),
     webGlVendor: text(js, 'webglVendor') || fallback.webGlVendor, webGlRenderer: text(js, 'webglRenderer') || fallback.webGlRenderer,

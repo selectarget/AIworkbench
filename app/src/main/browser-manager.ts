@@ -19,7 +19,7 @@ import { buildDolaVideoPreparationScript, buildDolaVideoSubmissionScript, buildD
 import type { PluginService } from './plugins';
 import { resolveProxyCredentials } from './proxy-credentials';
 import { buildDolaCalibrationScript, buildDolaClickCaptureScript, buildDolaLoginStepScript, normalizeDolaClickPoint, normalizeDolaLoginStep } from './dola-login';
-import { buildDoubao15sPromptSendScript, buildDoubaoDurationControlScript } from './doubao-task';
+import { buildDoubao15sPromptSendScript, buildDoubaoDurationControlScript, buildDoubao15sFloatingScript } from './doubao-task';
 import { buildStorageImportScript } from './storage-import';
 import { buildDolaReferenceInputDispatchScript, buildDolaReferenceInputPreparationScript, buildDolaReferenceUploadStatusScript, validateDolaMediaReferencePaths } from './dola-media';
 import { normalizeNavigationUrl } from './path-utils';
@@ -27,6 +27,8 @@ import { mediaTypeFromExtension, mediaTypeFromMimeType } from './media-formats';
 import { clearSessionData } from './session-cleanup';
 import { WebSocketDiagnosticTracker } from './network-diagnostics';
 import { setMediaRequestProxyAuth } from './media-request';
+import { acceptsDoubaoCreationCapture } from './media-capture-scope';
+import { parseDoubaoPlayInfoResponse } from './doubao-play-info';
 
 type Entry = { view: WebContentsView; accountId: string };
 type OpeningTask = { promise: Promise<void>; cancelled: boolean };
@@ -252,6 +254,7 @@ export class BrowserManager {
   private readonly recovering = new Set<string>();
   private readonly dolaResolver = new DolaVideoResolver();
   private readonly resolvedDolaFallbackApis = new Set<string>();
+  private readonly doubaoPlayInfoApis = new Map<string, string>();
   private readonly resolvingDolaFallbackApis = new Map<string, symbol>();
   private resolverDiagnosticSink: ((message: string) => void) | null = null;
   private networkDiagnosticSink: ((level: 'info' | 'warn', message: string) => void) | null = null;
@@ -288,6 +291,10 @@ export class BrowserManager {
     this.disposePluginListener = plugins?.onChange(() => { void this.syncCustomExtensions(); }) ?? null;
   }
   setMediaSink(sink: (accountId: string, resource: unknown) => void): void { this.mediaSink = sink; }
+  acceptsMediaCapture(accountId: string, source?: string): boolean {
+    const entry = this.entries.get(accountId);
+    return !entry || entry.view.webContents.isDestroyed() || acceptsDoubaoCreationCapture(entry.view.webContents.getURL(), source);
+  }
   setResolverDiagnosticSink(sink: (message: string) => void): void { this.resolverDiagnosticSink = sink; }
   setNetworkDiagnosticSink(sink: (level: 'info' | 'warn', message: string) => void): void { this.networkDiagnosticSink = sink; }
   setSiteDownloadSink(sink: (accountId: string, resource: unknown) => void): void { this.siteDownloadSink = sink; }
@@ -441,6 +448,7 @@ export class BrowserManager {
   }
 
   close(accountId: string): void {
+    for (const key of this.doubaoPlayInfoApis.keys()) if (key.startsWith(`${accountId}:`)) this.doubaoPlayInfoApis.delete(key);
     for (const key of this.resolvingDolaFallbackApis.keys()) if (key.startsWith(`${accountId}:`)) this.resolvingDolaFallbackApis.delete(key);
     for (const key of this.resolvedDolaFallbackApis) if (key.startsWith(`${accountId}:`)) this.resolvedDolaFallbackApis.delete(key);
     const pending = this.opening.get(accountId);
@@ -950,20 +958,30 @@ export class BrowserManager {
     const result = await entry.view.webContents.executeJavaScript(`typeof window.__AIAM_JIMENG_START_SELECT__ === 'function' ? window.__AIAM_JIMENG_START_SELECT__() : false`, true);
     return result === true ? { ok: true, message: '已开启即梦原图选择，请点击一张图片' } : { ok: false, message: '即梦原图脚本尚未就绪，请进入资产页后重试' };
   }
-  async startDoubaoCreationScan(accountId: string): Promise<{ ok: boolean; message: string; count?: number }> {
+  async refreshDoubaoVideo(accountId: string, resource: { vid?: string; messageId?: string; title?: string }): Promise<void> {
+    const api = resource.vid ? this.doubaoPlayInfoApis.get(`${accountId}:${resource.vid}`) : undefined;
+    if (!api) throw new Error('尚未捕获当前作品的播放信息，请回到原对话点击视频播放后重试下载；无需打开“我的创作”');
+    const resolved = await this.dolaResolver.resolve(api, session.fromPartition(`persist:account_${accountId}`), 'https://www.doubao.com/');
+    this.mediaSink?.(accountId, { ...resource, type: 'video', url: resolved.videoUrl, alternateUrls: resolved.alternateUrls,
+      thumbUrl: resolved.posterUrl || undefined, source: 'doubao-video-fallback-api', confirmedNoWatermark: true,
+      qualityEvidence: 'platform-api', resolutionMethod: 'fallback_api' });
+    this.resolverDiagnosticSink?.(`[video-resolver] platform=doubao account=${accountId} result=resolved method=current-play-info host=${new URL(resolved.videoUrl).hostname}`);
+  }
+  async startDoubaoCreationScan(accountId: string, targetResource?: { vid?: string; messageId?: string }): Promise<{ ok: boolean; message: string; count?: number }> {
     const account = this.account(accountId);
     if (account.platform !== 'doubao') throw new Error('仅豆包账号支持创作原视频扫描');
     const entry = this.entries.get(accountId);
     if (!entry || entry.view.webContents.isDestroyed()) throw new Error('请先打开豆包账号页面');
+    if (targetResource && !targetResource.vid && !targetResource.messageId) return { ok: false, count: 0, message: '当前素材缺少作品标识，请回到原对话重新捕获；未扫描历史作品' };
     const target = 'https://www.doubao.com/chat/create-image?tab=myCreation';
     const current = entry.view.webContents.getURL();
     if (!/^https:\/\/www\.doubao\.com\/chat\/create-image/i.test(current) || !/(?:^|[?&])tab=myCreation(?:&|$)/i.test(new URL(current || target).search)) {
       await withTimeout(entry.view.webContents.loadURL(target), 20_000, '豆包“我的创作”页面加载超时');
     }
     await entry.view.webContents.executeJavaScript(readFileSync(this.assetPath('scripts', 'doubao-creation-download.js'), 'utf8'), true);
-    const result = await entry.view.webContents.executeJavaScript(`typeof window.__AIAM_DOUBAO_CREATION_SCAN_TO_RESOURCE_PANEL__ === 'function' ? window.__AIAM_DOUBAO_CREATION_SCAN_TO_RESOURCE_PANEL__() : { ok: false, count: 0 }`, true) as { ok?: boolean; count?: number; navigated?: boolean } | undefined;
+    const result = await entry.view.webContents.executeJavaScript(`typeof window.__AIAM_DOUBAO_CREATION_SCAN_TO_RESOURCE_PANEL__ === 'function' ? window.__AIAM_DOUBAO_CREATION_SCAN_TO_RESOURCE_PANEL__(${JSON.stringify(targetResource ?? null)}) : { ok: false, count: 0 }`, true) as { ok?: boolean; count?: number; navigated?: boolean } | undefined;
     if (!result || result.navigated) return { ok: false, message: '已打开豆包“我的创作”，请稍后再次点击扫描' };
-    return result.ok ? { ok: true, count: Number(result.count) || 0, message: `已扫描 ${Number(result.count) || 0} 个豆包创作原视频，请查看素材流` } : { ok: false, count: Number(result.count) || 0, message: '未找到平台明确的原视频下载流，请确认“我的创作”页面已加载' };
+    return result.ok ? { ok: true, count: Number(result.count) || 0, message: `已扫描 ${Number(result.count) || 0} 个豆包创作原视频，请查看素材流` } : { ok: false, count: Number(result.count) || 0, message: targetResource ? '未找到当前作品的原视频下载地址，请回到原对话重新捕获；未导入其他历史作品' : '未找到平台明确的原视频下载流，请确认“我的创作”页面已加载' };
   }
   async clearDoubaoHistory(accountId: string): Promise<DoubaoHistoryCleanupResult> {
     const account = this.account(accountId);
@@ -1401,10 +1419,10 @@ export class BrowserManager {
     const installed = this.documentScriptNames.get(account.id) ?? new Set<string>();
     const fallbackInstalled = this.fallbackScriptNames.get(account.id) ?? new Set<string>();
     this.fallbackScriptNames.set(account.id, fallbackInstalled);
-    for (const name of adapters[account.platform].scripts) {
+    for (const name of [...adapters[account.platform].scripts, ...(account.platform === 'doubao' ? ['doubao-15s-floating'] : [])]) {
       if (installed.has(name) || fallbackInstalled.has(name)) continue;
       try {
-        await view.webContents.executeJavaScript(readFileSync(this.assetPath('scripts', name), 'utf8'), true);
+        await view.webContents.executeJavaScript(name === 'doubao-15s-floating' ? buildDoubao15sFloatingScript() : readFileSync(this.assetPath('scripts', name), 'utf8'), true);
         fallbackInstalled.add(name);
       } catch { /* A site script must not break navigation; a later retry may still succeed. */ }
     }
@@ -1443,6 +1461,15 @@ export class BrowserManager {
             const body = response.base64Encoded ? Buffer.from(response.body, 'base64').toString('utf8') : String(response.body ?? '');
             if (body.length > 15_000_000) return;
             const responseUrl = pending.url;
+            if (!this.acceptsMediaCapture(pending.accountId)) return;
+            if (pending.platform === 'doubao') {
+              for (const candidate of parseDoubaoPlayInfoResponse(responseUrl, body) ?? []) {
+                if (candidate.vid) {
+                  if (this.doubaoPlayInfoApis.size >= 500) this.doubaoPlayInfoApis.delete(this.doubaoPlayInfoApis.keys().next().value!);
+                  this.doubaoPlayInfoApis.set(`${pending.accountId}:${candidate.vid}`, responseUrl);
+                }
+              }
+            }
             for (const resource of (adapter.parseResponse?.(responseUrl, body) ?? parseMediaPayload(body, `cdp:${pending.platform}`))) this.mediaSink?.(pending.accountId, resource);
             if (pending.platform === 'dola' || pending.platform === 'doubao') void this.resolveDolaFallbacks(pending.accountId, body, pending.platform === 'doubao' ? 'https://www.doubao.com/' : dolaFallbackReferer(responseUrl), pending.platform);
           } catch { /* streaming and cached bodies may be unavailable */ }
@@ -1455,10 +1482,10 @@ export class BrowserManager {
     if (this.settings.get().disabledAdapters.includes(account.platform)) return;
     const installed = this.documentScriptNames.get(account.id) ?? new Set<string>();
     this.documentScriptNames.set(account.id, installed);
-    for (const name of adapters[account.platform].scripts) {
+    for (const name of [...adapters[account.platform].scripts, ...(account.platform === 'doubao' ? ['doubao-15s-floating'] : [])]) {
       if (installed.has(name)) continue;
       try {
-        const source = readFileSync(this.assetPath('scripts', name), 'utf8');
+        const source = name === 'doubao-15s-floating' ? buildDoubao15sFloatingScript() : readFileSync(this.assetPath('scripts', name), 'utf8');
         const result = await view.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source }) as { identifier?: string };
         if (typeof result?.identifier === 'string' && result.identifier) installed.add(name);
       } catch { /* did-finish-load injection below remains the safe fallback. */ }
@@ -1480,6 +1507,7 @@ export class BrowserManager {
         this.resolverDiagnosticSink?.(`[video-resolver] platform=${platform} account=${accountId} result=resolved host=${new URL(resolved.videoUrl).hostname}`);
         let vid: string | undefined;
         try { const query = new URL(fallbackApi).searchParams; vid = query.get('video_id') || query.get('vid') || undefined; } catch { /* extractor already validates the URL */ }
+        if (platform === 'doubao' && vid) this.doubaoPlayInfoApis.set(`${accountId}:${vid}`, fallbackApi);
         this.mediaSink?.(accountId, { type: 'video', url: resolved.videoUrl, alternateUrls: resolved.alternateUrls, thumbUrl: resolved.posterUrl || undefined, vid, title: platform === 'doubao' ? '豆包原视频' : 'Dola 原视频', source: `${platform}-video-fallback-api`, confirmedNoWatermark: true, resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api' });
       } catch (error) {
         if (this.resolvingDolaFallbackApis.get(key) !== operation) continue;

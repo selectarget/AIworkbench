@@ -321,6 +321,7 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
     if (!/^https?:\/\//i.test(senderFrame.url || event.sender.getURL())) return;
     const account = accounts.list().find((item) => item.id === accountId); if (!account || !isRemoteAdapterEnabled(account.platform, settings.get().disabledAdapters)) return;
     const parsed = remoteMediaSchema.safeParse(raw); if (!parsed.success) return;
+    if (!browser.acceptsMediaCapture(accountId, parsed.data.source)) return;
     const hasDolaLocator = [parsed.data.messageId, parsed.data.shareId, parsed.data.shareUrl, parsed.data.threadUrl, parsed.data.vid, parsed.data.keySeed, parsed.data.fplayUrl, parsed.data.dolaRecordKey, parsed.data.dolaCardId, parsed.data.dolaVideoElementId].some((item) => Boolean(item?.trim()));
     if (!parsed.data.url && (account.platform !== 'dola' || parsed.data.type !== 'video' || !hasDolaLocator)) return;
     if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), parsed.data)) return;

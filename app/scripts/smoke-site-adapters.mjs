@@ -299,6 +299,11 @@ async function main() {
       throw new Error(`Doubao creation adapter failed: ${JSON.stringify({ doubaoResult, doubaoMessage, mediaMessages })}`);
     }
     console.log('Doubao creation adapter ok: public download-info result reached remote media bridge');
+    const beforeTargetScan = mediaMessages.length;
+    const missingTarget = await execute(doubaoView, () => window.__AIAM_DOUBAO_CREATION_SCAN_TO_RESOURCE_PANEL__({ vid: 'missing-current-work' }));
+    await wait(150);
+    if (missingTarget?.ok || Number(missingTarget?.count) !== 0 || mediaMessages.length !== beforeTargetScan) throw new Error('Targeted Doubao scan imported unrelated history');
+    console.log('Doubao targeted scan ok: missing current work does not import history');
     await closeFixtureView(doubaoView);
 
     const higgsSession = session.fromPartition('persist:adapter-higgsfield');

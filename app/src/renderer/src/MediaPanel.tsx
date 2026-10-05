@@ -8,7 +8,7 @@ type Props = {
   onSelect(ids: string[]): void; onPreview(resource: MediaResource): void;
   onDownload(resource: MediaResource): void; onDownloadMany(resources: MediaResource[]): void;
   onCandidates(resource: MediaResource): void; onRefresh(resource: MediaResource): void;
-  onOpenFolder(): void; onLibrary(): void; onClear(): void; onStatus(message: string): void;
+  onOpenFolder(): void; onLibrary(): void; onCollapse?(): void; onClear(): void; onStatus(message: string): void;
 };
 
 function bytes(value: number): string {
@@ -49,28 +49,154 @@ function MaterialCard({ resource, task, selected, account, onSelect, onPreview, 
   const state = !resource.url ? '等待解析' : task ? taskState(task) : resource.previewStatus === 'loading' ? '准备预览' : resource.previewStatus === 'failed' ? '预览失败' : resource.previewCached ? '本地预览' : '可预览';
   const busy = task?.status === 'running' || task?.status === 'queued';
   const error = task?.status === 'failed' ? task.error : resource.previewError;
-  return <article ref={ref} className={`material-card ${selected ? 'is-selected' : ''}`}>
-    <div className="material-cover">
-      <button className="material-preview-button" onClick={onPreview} disabled={!videoUrl} aria-label={`预览 ${resource.title || '素材'}`}>
-        {visible && !failed && ((poster && !posterFailed) || resource.type === 'image') ? <img loading="lazy" src={!posterFailed && poster ? poster : videoUrl} alt={resource.title || '素材封面'} onError={() => poster && !posterFailed ? setPosterFailed(true) : setFailed(true)} /> : visible && videoUrl && !failed && resource.type === 'video' ? <video muted playsInline preload="metadata" src={videoUrl} onError={() => setFailed(true)} onLoadedMetadata={(event) => { const video = event.currentTarget; if (Number.isFinite(video.duration) && video.duration > 0) video.currentTime = Math.min(0.1, video.duration / 2); }} /> : <span className="material-placeholder">{resource.type === 'video' ? '▷' : '▧'}<small>{failed ? '封面暂不可用' : !videoUrl ? '等待原始地址' : '加载封面'}</small></span>}
-        {resource.type === 'video' && videoUrl && <span className="material-play" aria-hidden="true">▶</span>}
-      </button>
-      <label className="material-select"><input type="checkbox" checked={selected} onChange={onSelect} aria-label={`选择素材 ${resource.title || resource.id}`} /></label>
-      <span className={`material-state ${task?.status || ''}`}>{state}</span>
-      {resource.duration ? <span className="material-duration">{Math.floor(resource.duration / 60)}:{String(Math.floor(resource.duration % 60)).padStart(2, '0')}</span> : null}
-    </div>
-    <div className="material-body"><strong title={resource.title}>{resource.title || (resource.type === 'video' ? '视频作品' : '图片作品')}</strong><div className="material-meta"><span>{account}</span><span>{resource.width && resource.height ? `${resource.width} × ${resource.height}` : resource.type === 'video' ? '视频' : '图片'}{resource.confirmedNoWatermark ? ' · 原始' : ''}</span></div>
-      {task && ['running', 'queued', 'paused'].includes(task.status) && <TaskProgress task={task} />}
-      {error && <p className="material-error" role="status">{error}</p>}
-      <div className="material-actions"><button disabled={!videoUrl} onClick={onPreview}>预览</button><button className="primary" disabled={busy} onClick={task?.status === 'completed' && task.path ? onReveal : task?.status === 'paused' ? onResume : onDownload}>{task?.status === 'completed' ? '定位文件' : task?.status === 'paused' ? '继续下载' : busy ? '已加入队列' : task?.status === 'failed' ? '重试下载' : !videoUrl ? '解析并下载' : '下载'}</button><button className="material-more" aria-label="素材更多操作" aria-expanded={more} onClick={() => setMore(!more)}>···</button></div>
-      {more && <div className="material-more-actions"><button onClick={onRefresh}>重新解析</button><button onClick={onCandidates}>候选地址</button></div>}
-    </div>
-  </article>;
+  const downloadLabel =
+    task?.status === 'completed'
+      ? '定位文件'
+      : task?.status === 'paused'
+        ? '继续下载'
+        : busy
+          ? '已加入队列'
+          : task?.status === 'failed'
+            ? '重试下载'
+            : !videoUrl
+              ? '解析并下载'
+              : '下载';
+  const handleDownload =
+    task?.status === 'completed' && task.path
+      ? onReveal
+      : task?.status === 'paused'
+        ? onResume
+        : onDownload;
+
+  return (
+    <article ref={ref} className={`material-card ${selected ? 'is-selected' : ''}`}>
+      <div className="material-cover">
+        <button
+          className="material-preview-button"
+          onClick={onPreview}
+          disabled={!videoUrl}
+          aria-label={`预览 ${resource.title || '素材'}`}
+        >
+          {visible && !failed && ((poster && !posterFailed) || resource.type === 'image') ? (
+            <img
+              loading="lazy"
+              src={!posterFailed && poster ? poster : videoUrl}
+              alt={resource.title || '素材封面'}
+              onError={() => (poster && !posterFailed ? setPosterFailed(true) : setFailed(true))}
+            />
+          ) : visible && videoUrl && !failed && resource.type === 'video' ? (
+            <video
+              muted
+              playsInline
+              preload="metadata"
+              src={videoUrl}
+              onError={() => setFailed(true)}
+              onLoadedMetadata={(event) => {
+                const video = event.currentTarget;
+                if (Number.isFinite(video.duration) && video.duration > 0)
+                  video.currentTime = Math.min(0.1, video.duration / 2);
+              }}
+            />
+          ) : (
+            <span className="material-placeholder">
+              {resource.type === 'video' ? '▷' : '▧'}
+              <small>{failed ? '封面暂不可用' : !videoUrl ? '等待原始地址' : '加载封面'}</small>
+            </span>
+          )}
+          {resource.type === 'video' && videoUrl && (
+            <span className="material-play" aria-hidden="true">
+              ▶
+            </span>
+          )}
+        </button>
+        <label className="material-select">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onSelect}
+            aria-label={`选择素材 ${resource.title || resource.id}`}
+          />
+        </label>
+        <span className={`material-state ${task?.status || ''}`}>{state}</span>
+        {resource.duration ? (
+          <span className="material-duration">
+            {Math.floor(resource.duration / 60)}:
+            {String(Math.floor(resource.duration % 60)).padStart(2, '0')}
+          </span>
+        ) : null}
+        <div className="material-cover-overlay">
+          <div className="material-actions">
+            <button
+              disabled={!videoUrl}
+              onClick={(e) => {
+                e.stopPropagation();
+                onPreview();
+              }}
+              aria-label={`预览 ${resource.title || '素材'}`}
+            >
+              预览
+            </button>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownload();
+              }}
+              title={downloadLabel}
+            >
+              {downloadLabel}
+            </button>
+            <button
+              className="material-more"
+              aria-label="素材更多操作"
+              aria-expanded={more}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMore(!more);
+              }}
+            >
+              ···
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="material-body">
+        <strong title={resource.title}>
+          {resource.title || (resource.type === 'video' ? '视频作品' : '图片作品')}
+        </strong>
+        <div className="material-meta">
+          <span>{account}</span>
+          <span>
+            {resource.width && resource.height
+              ? `${resource.width} × ${resource.height}`
+              : resource.type === 'video'
+                ? '视频'
+                : '图片'}
+            {resource.confirmedNoWatermark ? ' · 原始' : ''}
+          </span>
+        </div>
+        {task && ['running', 'queued', 'paused'].includes(task.status) && (
+          <TaskProgress task={task} />
+        )}
+        {error && (
+          <p className="material-error" role="status">
+            {error}
+          </p>
+        )}
+        {more && (
+          <div className="material-more-actions">
+            <button onClick={onRefresh}>重新解析</button>
+            <button onClick={onCandidates}>候选地址</button>
+          </div>
+        )}
+      </div>
+    </article>
+  );
 }
 
 export function MediaPanel(props: Props): React.JSX.Element {
   const [tab, setTab] = useState<'videos' | 'images' | 'tasks'>('videos');
-  const [search, setSearch] = useState('');
   const [limit, setLimit] = useState(30);
   const [taskFilter, setTaskFilter] = useState<'all' | 'active' | 'failed'>('active');
   const [actionBusy, setActionBusy] = useState(false);
@@ -95,17 +221,7 @@ export function MediaPanel(props: Props): React.JSX.Element {
     [props.resources, currentType]
   );
 
-  const filtered = useMemo(
-    () =>
-      currentResources.filter(
-        (resource) =>
-          !search ||
-          `${resource.title} ${props.accountName(resource.accountId)}`
-            .toLowerCase()
-            .includes(search.toLowerCase())
-      ),
-    [currentResources, search, props.accountName]
-  );
+  const filtered = currentResources;
 
   const active = props.tasks.filter((task) => ['queued', 'running', 'paused'].includes(task.status));
   const failed = props.tasks.filter((task) => task.status === 'failed' && !task.automatic);
@@ -142,27 +258,46 @@ export function MediaPanel(props: Props): React.JSX.Element {
   return (
     <aside className="sidebar media-panel material-panel">
       <div className="material-panel-heading">
-        <div>
-          <small>创作成果</small>
+        <div className="material-panel-title">
           <h2>素材与下载</h2>
         </div>
         <div>
-          <button title="打开视频目录" aria-label="视频目录" onClick={props.onOpenFolder}>▱</button>
-          <button title="查看已下载素材" onClick={props.onLibrary}>素材库</button>
+          <button title="打开视频目录" aria-label="视频目录" onClick={props.onOpenFolder}>
+            ▱
+          </button>
+          <button title="查看已下载素材" onClick={props.onLibrary}>
+            素材库
+          </button>
+          {props.onCollapse && (
+            <button
+              className="material-collapse-btn"
+              title="收起素材栏"
+              aria-label="收起素材栏"
+              onClick={props.onCollapse}
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
       <div className="material-tabs">
         <button
           className={tab === 'videos' ? 'active' : ''}
-          onClick={() => { setTab('videos'); setLimit(30); }}
+          onClick={() => {
+            setTab('videos');
+            setLimit(30);
+          }}
           aria-label="查看视频素材"
         >
           视频 <span>{videoCount}</span>
         </button>
         <button
           className={tab === 'images' ? 'active' : ''}
-          onClick={() => { setTab('images'); setLimit(30); }}
+          onClick={() => {
+            setTab('images');
+            setLimit(30);
+          }}
           aria-label="查看图片素材"
           data-parse-images={props.parseImages ? 'true' : 'false'}
           title={props.parseImages ? '查看图片素材' : '查看图片素材（可在设置中开启图片解析）'}
@@ -174,20 +309,13 @@ export function MediaPanel(props: Props): React.JSX.Element {
           onClick={() => setTab('tasks')}
           aria-label="查看下载任务"
         >
-          下载任务 <span>{active.length || props.tasks.length}</span>{failed.length > 0 && <i />}
+          下载任务 <span>{active.length || props.tasks.length}</span>
+          {failed.length > 0 && <i />}
         </button>
       </div>
 
       {tab !== 'tasks' ? (
         <>
-          <div className="material-search">
-            <input
-              aria-label={isImages ? '搜索图片素材' : '搜索视频素材'}
-              placeholder={isImages ? '搜索图片作品或账号' : '搜索视频作品或账号'}
-              value={search}
-              onChange={(event) => { setSearch(event.target.value); setLimit(30); }}
-            />
-          </div>
           <div className="material-batch">
             <label>
               <input
@@ -255,18 +383,14 @@ export function MediaPanel(props: Props): React.JSX.Element {
               <div className="material-empty">
                 <span>{isImages ? '▧' : '▶'}</span>
                 <strong>
-                  {search
-                    ? (isImages ? '没有匹配的图片作品' : '没有匹配的视频作品')
-                    : (isImages ? (props.parseImages ? '暂无图片作品' : '图片解析暂未开启') : '等待你的下一份作品')}
+                  {isImages ? (props.parseImages ? '暂无图片作品' : '图片解析暂未开启') : '等待你的下一份作品'}
                 </strong>
                 <p>
-                  {search
-                    ? '换个关键词试试'
-                    : isImages
-                      ? (props.parseImages
-                          ? '生成的图片作品会自动出现在这里。'
-                          : '当前默认只捕获视频素材。可在【设置 -> 常规】中开启“解析图片素材”，即可自动捕获图片作品。')
-                      : '视频生成后会自动出现在这里。'}
+                  {isImages
+                    ? (props.parseImages
+                        ? '生成的图片作品会自动出现在这里。'
+                        : '当前默认只捕获视频素材。可在【设置 -> 常规】中开启“解析图片素材”，即可自动捕获图片作品。')
+                    : '视频生成后会自动出现在这里。'}
                 </p>
               </div>
             )}
@@ -276,21 +400,6 @@ export function MediaPanel(props: Props): React.JSX.Element {
               </button>
             )}
           </div>
-          {active.length + failed.length > 0 && (
-            <button
-              className="material-queue-summary"
-              onClick={() => {
-                setTab('tasks');
-                setTaskFilter(failed.length ? 'failed' : 'active');
-              }}
-            >
-              <span>
-                {active.length ? `${active.length} 个下载任务` : '下载队列'}
-                {failed.length ? ` · ${failed.length} 个需要处理` : ''}
-              </span>
-              <span>查看 →</span>
-            </button>
-          )}
         </>
       ) : (
         <>

@@ -121,6 +121,7 @@ export class MediaService {
     const parsed = mediaResourceSchema.safeParse({ ...value, url, id: provisionalId, accountId, capturedAt: new Date().toISOString(), source: String(value.source ?? 'remote-preload'), expiresAt: normalizeDate(value.expiresAt ?? value.expires_at) });
     if (!parsed.success) return null;
     let candidate = parsed.data;
+    if (account.platform === 'doubao' && isLowResolutionDoubaoPreview(candidate)) return null;
     if (account.platform === 'doubao' && candidate.type === 'video' && isDoubaoPlaybackStream(candidate.url) && candidate.source !== 'doubao-video-fallback-api') {
       candidate = { ...candidate, confirmedNoWatermark: false, qualityEvidence: 'platform-api', resolutionMethod: 'doubao-playback-stream' };
     }
@@ -144,7 +145,18 @@ export class MediaService {
     }
     this.resources.set(candidate.id, candidate); this.emitResources(); return candidate;
   }
-  list(): MediaResource[] { return [...this.resources.values()].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)); }
+  list(): MediaResource[] {
+    const visible: MediaResource[] = [];
+    const platformsByAccount = new Map(this.accounts.list().map(account => [account.id, account.platform]));
+    const completedIds = new Set([...this.taskMap.values()].filter(task => task.status === 'completed').map(task => task.resourceId));
+    for (const resource of this.resources.values()) {
+      if (platformsByAccount.get(resource.accountId) === 'doubao' && isLowResolutionDoubaoPreview(resource)) continue;
+      const index = visible.findIndex(item => isSameResource(item, resource));
+      if (index < 0) visible.push(resource);
+      else visible[index] = completedIds.has(resource.id) ? mergeResource(resource, visible[index]!) : mergeResource(visible[index]!, resource);
+    }
+    return visible.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+  }
   clear(): void {
     this.resources.clear(); this.pendingCovers.clear();
     this.resourceVersions.clear();
@@ -1081,7 +1093,20 @@ function semanticIdentity(value: Record<string, unknown>, url: string): string {
 function isSameResource(a: MediaResource, b: MediaResource): boolean {
   if (a.type !== b.type || a.accountId !== b.accountId) return false;
   if (sharesStableId(a, b)) return true;
+  const asset = doubaoVideoAssetIdentity(a.url);
+  if (a.type === 'video' && asset && asset === doubaoVideoAssetIdentity(b.url)) return true;
   return resourceIdentity(a.url, a.type === 'image') === resourceIdentity(b.url, b.type === 'image');
+}
+function isLowResolutionDoubaoPreview(resource: MediaResource): boolean {
+  return resource.type === 'video' && !resource.confirmedNoWatermark && Boolean(resource.width && resource.height) && Math.max(resource.width!, resource.height!) < 720;
+}
+function doubaoVideoAssetIdentity(value: string): string {
+  try {
+    const url = new URL(value);
+    if (!/^v\d+-(?:vdl|videoweb)\.doubao\.com$/i.test(url.hostname)) return '';
+    const index = url.pathname.indexOf('/video/tos/');
+    return index >= 0 ? url.pathname.slice(index).replace(/\/+$/, '') : '';
+  } catch { return ''; }
 }
 function mergeResource(current: MediaResource, incoming: MediaResource): MediaResource {
   const currentArea = (current.width ?? 0) * (current.height ?? 0); const incomingArea = (incoming.width ?? 0) * (incoming.height ?? 0);

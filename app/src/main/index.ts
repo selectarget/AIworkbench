@@ -180,8 +180,7 @@ async function createWindow(): Promise<BrowserWindow> {
     if (account?.platform === 'dola') {
       await browser.resolveDolaResource(resource.accountId, resource, false);
     } else if (account?.platform === 'doubao') {
-      const result = await browser.startDoubaoCreationScan(resource.accountId);
-      if (!result.ok) throw new Error(result.message);
+      await browser.refreshDoubaoVideo(resource.accountId, resource);
     } else throw new Error('请在账号页面打开原视频对话后重新捕获素材');
   });
   const disposeSettingsListener = settings.onChange((value, previous) => {

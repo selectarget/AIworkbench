@@ -2,6 +2,7 @@ import type { AdapterCapabilities, AdapterTaskDuration, PlatformDefinition, Plat
 import { platforms } from '../shared/platforms';
 import type { CapturedCandidate } from './media-parser';
 import { parseDolaPayload, parseDoubaoPayload, parseMediaPayload, parseQianwenPayload, parseYunquePayload } from './media-parser';
+import { parseDoubaoPlayInfoResponse } from './doubao-play-info';
 
 export interface PlatformAdapter {
   definition: PlatformDefinition;
@@ -140,7 +141,7 @@ const doubao: PlatformAdapter = {
   extensions: ['maowang-doubao', 'doubao-download', 'doubao-video-15s'], scripts: ['browser-compat.js', 'generic-video-capture.js', 'dola-duration-bridge.js', 'doubao-creation-download.js'],
   capabilities: createCapabilities({ requestModification: true, responseModification: true, dedicatedDownloader: true, taskDurations: [15, 30] }),
   matches: (url) => matchesHostname(url, /(^|\.)doubao\.com$/i),
-  parseResponse: (_url, body) => parseDoubaoPayload(body),
+  parseResponse: (url, body) => parseDoubaoPlayInfoResponse(url, body) ?? parseDoubaoPayload(body),
   fetchPatterns: [
     { urlPattern: '*://*.doubao.com/samantha/skill/pack*', requestStage: 'Response' },
     { urlPattern: '*://*.doubao.com/*/samantha/skill/pack*', requestStage: 'Response' },
