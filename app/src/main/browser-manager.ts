@@ -27,8 +27,10 @@ import { mediaTypeFromExtension, mediaTypeFromMimeType } from './media-formats';
 import { clearSessionData } from './session-cleanup';
 import { WebSocketDiagnosticTracker } from './network-diagnostics';
 import { setMediaRequestProxyAuth } from './media-request';
-import { acceptsDoubaoCreationCapture } from './media-capture-scope';
+import { acceptsConversationResponse, acceptsDoubaoCreationCapture } from './media-capture-scope';
 import { parseDoubaoPlayInfoResponse } from './doubao-play-info';
+import { buildDoubaoVisibleVideoIdsScript, doubaoVideoIdFromApi } from './doubao-video-scope';
+import { conversationKey } from '../shared/media-scope';
 
 type Entry = { view: WebContentsView; accountId: string };
 type OpeningTask = { promise: Promise<void>; cancelled: boolean };
@@ -250,7 +252,7 @@ export class BrowserManager {
   private readonly configuredSessions = new Set<string>();
   private readonly downloadListenerDisposers = new Map<string, () => void>();
   private readonly permissionGrants = new Map<string, Set<string>>();
-  private readonly networkResponses = new Map<string, { accountId: string; platform: Account['platform']; url: string }>();
+  private readonly networkResponses = new Map<string, { accountId: string; platform: Account['platform']; url: string; capturePageUrl: string }>();
   private readonly recovering = new Set<string>();
   private readonly dolaResolver = new DolaVideoResolver();
   private readonly resolvedDolaFallbackApis = new Set<string>();
@@ -294,6 +296,21 @@ export class BrowserManager {
   acceptsMediaCapture(accountId: string, source?: string): boolean {
     const entry = this.entries.get(accountId);
     return !entry || entry.view.webContents.isDestroyed() || acceptsDoubaoCreationCapture(entry.view.webContents.getURL(), source);
+  }
+  async validateCapturedMedia(accountId: string, resource: { type: string; vid?: string; source?: string; capturePageUrl?: string }): Promise<boolean> {
+    if (this.account(accountId).platform !== 'doubao' || resource.type !== 'video') return true;
+    if (['site-download', 'doubao-creation-resource-panel', 'doubao-creation-card'].includes(resource.source || '')) return true;
+    const entry = this.entries.get(accountId);
+    if (!entry || entry.view.webContents.isDestroyed() || !resource.vid) return false;
+    try {
+      const snapshot = await entry.view.webContents.executeJavaScript(buildDoubaoVisibleVideoIdsScript()) as { pageUrl: string; vids: string[]; videos?: { vid: string; fallbackApi: string }[] };
+      return Boolean(conversationKey(snapshot.pageUrl)) && conversationKey(snapshot.pageUrl) === conversationKey(resource.capturePageUrl || snapshot.pageUrl) && snapshot.vids.includes(resource.vid);
+    } catch { return false; }
+  }
+  scopeCapturedMedia(accountId: string, raw: unknown): unknown {
+    if (!raw || typeof raw !== 'object') return raw;
+    const value = raw as Record<string, unknown>;
+    return { ...value, capturePageUrl: value.capturePageUrl || this.entries.get(accountId)?.view.webContents.getURL() };
   }
   setResolverDiagnosticSink(sink: (message: string) => void): void { this.resolverDiagnosticSink = sink; }
   setNetworkDiagnosticSink(sink: (level: 'info' | 'warn', message: string) => void): void { this.networkDiagnosticSink = sink; }
@@ -1307,11 +1324,13 @@ export class BrowserManager {
     ses.setUserAgent(fingerprint.userAgent, fingerprint.languages.join(','));
     const passive = ['clipboard-sanitized-write', 'fullscreen', 'notifications']; const prompt = ['media', 'geolocation', 'clipboard-read', 'display-capture'];
     const grantKey = (permission: string, origin: string): string => `${permission}:${origin}`; if (!this.permissionGrants.has(account.id)) this.permissionGrants.set(account.id, new Set());
-    ses.setPermissionCheckHandler((_wc, permission, origin) => /^https:\/\//i.test(origin) && (passive.includes(permission) || this.permissionGrants.get(account.id)!.has(grantKey(permission, origin))));
+    ses.setPermissionCheckHandler((_wc, permission, origin) => /^https:\/\//i.test(origin) && this.permissionGrants.has(account.id) && (passive.includes(permission) || this.permissionGrants.get(account.id)?.has(grantKey(permission, origin)) === true));
     ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+      const grants = this.permissionGrants.get(account.id);
+      if (!grants || wc?.isDestroyed()) return callback(false);
       let origin = ''; try { origin = new URL(details.requestingUrl || wc?.getURL() || '').origin; } catch { return callback(false); }
       if (!/^https:\/\//i.test(origin)) return callback(false); if (passive.includes(permission)) return callback(true); if (!prompt.includes(permission)) return callback(false);
-      void dialog.showMessageBox(this.window, { type: 'question', title: '网站权限请求', message: `${origin} 请求使用“${permission}”权限`, detail: `账号：${account.name}\n仅在你确认当前网站确实需要时允许。`, buttons: ['拒绝', '本次允许'], defaultId: 0, cancelId: 0 }).then(({ response }) => { if (response === 1) this.permissionGrants.get(account.id)!.add(grantKey(permission, origin)); callback(response === 1); }).catch(() => callback(false));
+      void dialog.showMessageBox(this.window, { type: 'question', title: '网站权限请求', message: `${origin} 请求使用“${permission}”权限`, detail: `账号：${account.name}\n仅在你确认当前网站确实需要时允许。`, buttons: ['拒绝', '本次允许'], defaultId: 0, cancelId: 0 }).then(({ response }) => { const allowed = response === 1 && this.permissionGrants.get(account.id) === grants && !wc?.isDestroyed(); if (allowed) grants.add(grantKey(permission, origin)); callback(allowed); }).catch(() => callback(false));
     });
     if (!this.configuredSessions.has(account.id)) {
       this.configuredSessions.add(account.id);
@@ -1443,24 +1462,32 @@ export class BrowserManager {
       await view.webContents.debugger.sendCommand('Network.enable', { maxTotalBufferSize: 50_000_000, maxResourceBufferSize: 15_000_000 });
       const patchEnabled = settings.experimentalResponsePatchEnabled && adapter.patchResponse && adapter.fetchPatterns.length;
       if (patchEnabled) await view.webContents.debugger.sendCommand('Fetch.enable', { patterns: adapter.fetchPatterns });
+      const requestPages = new Map<string, string>();
       const sockets = new WebSocketDiagnosticTracker(account.id, (level, message) => this.networkDiagnosticSink?.(level, message));
       view.webContents.debugger.on('message', async (_event, method, params) => {
         sockets.record(method, params);
+        const requestKey = String(params.requestId ?? '');
+        if (method === 'Network.requestWillBeSent' && /XHR|Fetch/i.test(String(params.type))) {
+          if (requestPages.size >= 2000) requestPages.delete(requestPages.keys().next().value!);
+          requestPages.set(requestKey, view.webContents.getURL());
+        }
         if (this.settings.get().disabledAdapters.includes(account.platform)) { if (method === 'Fetch.requestPaused') try { await view.webContents.debugger.sendCommand('Fetch.continueRequest', { requestId: String(params.requestId) }); } catch { /* page closed */ } return; }
         if (method === 'Fetch.requestPaused') await this.patchPausedResponse(adapter, view, params);
         if (method === 'Network.responseReceived') {
           if (!adapter.definition.specialized && !adapter.parseResponse) return;
           const mime = String(params.response?.mimeType ?? ''); const type = String(params.type ?? '');
           if (!/json|event-stream|text\//i.test(mime) || !/XHR|Fetch/i.test(type)) return;
-          this.networkResponses.set(`${view.webContents.id}:${String(params.requestId)}`, { accountId: account.id, platform: account.platform, url: String(params.response?.url ?? '') });
+          this.networkResponses.set(`${view.webContents.id}:${String(params.requestId)}`, { accountId: account.id, platform: account.platform, url: String(params.response?.url ?? ''), capturePageUrl: requestPages.get(requestKey) || view.webContents.getURL() });
         }
         if (method === 'Network.loadingFinished') {
+          requestPages.delete(requestKey);
           const key = `${view.webContents.id}:${String(params.requestId)}`; const pending = this.networkResponses.get(key); if (!pending) return; this.networkResponses.delete(key);
           try {
             const response = await view.webContents.debugger.sendCommand('Network.getResponseBody', { requestId: params.requestId });
             const body = response.base64Encoded ? Buffer.from(response.body, 'base64').toString('utf8') : String(response.body ?? '');
             if (body.length > 15_000_000) return;
             const responseUrl = pending.url;
+            if ((pending.platform === 'doubao' || pending.platform === 'dola') && !acceptsConversationResponse(responseUrl)) return;
             if (!this.acceptsMediaCapture(pending.accountId)) return;
             if (pending.platform === 'doubao') {
               for (const candidate of parseDoubaoPlayInfoResponse(responseUrl, body) ?? []) {
@@ -1470,11 +1497,31 @@ export class BrowserManager {
                 }
               }
             }
-            for (const resource of (adapter.parseResponse?.(responseUrl, body) ?? parseMediaPayload(body, `cdp:${pending.platform}`))) this.mediaSink?.(pending.accountId, resource);
-            if (pending.platform === 'dola' || pending.platform === 'doubao') void this.resolveDolaFallbacks(pending.accountId, body, pending.platform === 'doubao' ? 'https://www.doubao.com/' : dolaFallbackReferer(responseUrl), pending.platform);
+            const resources = adapter.parseResponse?.(responseUrl, body) ?? parseMediaPayload(body, `cdp:${pending.platform}`);
+            let visibleIds: Set<string> | undefined;
+            let verifiedApis: Map<string, string> | undefined;
+            if (pending.platform === 'doubao' && (resources.some(item => item.type === 'video') || extractDolaFallbackApis(body).length)) {
+              const snapshot = await view.webContents.executeJavaScript(buildDoubaoVisibleVideoIdsScript()) as { pageUrl: string; vids: string[]; videos?: { vid: string; fallbackApi: string }[] };
+              if (conversationKey(snapshot.pageUrl) !== conversationKey(pending.capturePageUrl)) return;
+              visibleIds = new Set(snapshot.vids);
+              verifiedApis = new Map((snapshot.videos || []).map(item => [item.fallbackApi, item.vid]));
+              if (!visibleIds.size) {
+                await new Promise(resolve => setTimeout(resolve, 400));
+                const retry = await view.webContents.executeJavaScript(buildDoubaoVisibleVideoIdsScript()) as { pageUrl: string; vids: string[]; videos?: { vid: string; fallbackApi: string }[] };
+                if (conversationKey(retry.pageUrl) !== conversationKey(pending.capturePageUrl)) return;
+                visibleIds = new Set(retry.vids);
+                verifiedApis = new Map((retry.videos || []).map(item => [item.fallbackApi, item.vid]));
+              }
+              this.resolverDiagnosticSink?.(`[capture-scope] platform=doubao account=${pending.accountId} candidates=${resources.filter(item => item.type === 'video').length} visibleVids=${visibleIds.size} matched=${resources.filter(item => item.type === 'video' && item.vid && visibleIds!.has(item.vid)).length}`);
+            }
+            for (const resource of resources) {
+              if (pending.platform === 'doubao' && resource.type === 'video' && (!resource.vid || !visibleIds?.has(resource.vid))) continue;
+              this.mediaSink?.(pending.accountId, { ...resource, capturePageUrl: pending.capturePageUrl });
+            }
+            if (pending.platform === 'dola' || pending.platform === 'doubao') void this.resolveDolaFallbacks(pending.accountId, body, pending.platform === 'doubao' ? 'https://www.doubao.com/' : dolaFallbackReferer(responseUrl), pending.platform, pending.capturePageUrl, visibleIds, verifiedApis);
           } catch { /* streaming and cached bodies may be unavailable */ }
         }
-        if (method === 'Network.loadingFailed') this.networkResponses.delete(`${view.webContents.id}:${String(params.requestId)}`);
+        if (method === 'Network.loadingFailed') { requestPages.delete(requestKey); this.networkResponses.delete(`${view.webContents.id}:${String(params.requestId)}`); }
       });
     } catch { /* Never block page loading when CDP is unavailable. */ }
   }
@@ -1491,9 +1538,12 @@ export class BrowserManager {
       } catch { /* did-finish-load injection below remains the safe fallback. */ }
     }
   }
-  private async resolveDolaFallbacks(accountId: string, body: string, referer: string, platform: 'dola' | 'doubao' = 'dola'): Promise<void> {
+  private async resolveDolaFallbacks(accountId: string, body: string, referer: string, platform: 'dola' | 'doubao' = 'dola', capturePageUrl?: string, visibleIds?: Set<string>, verifiedApis?: Map<string, string>): Promise<void> {
     const target = session.fromPartition(`persist:account_${accountId}`);
-    for (const fallbackApi of extractDolaFallbackApis(body)) {
+    const apis = platform === 'doubao' && verifiedApis ? [...verifiedApis.keys()] : extractDolaFallbackApis(body, platform === 'doubao' ? visibleIds ?? new Set() : undefined);
+    for (const fallbackApi of apis) {
+      const boundVid = verifiedApis?.get(fallbackApi) || doubaoVideoIdFromApi(fallbackApi);
+      if (platform === 'doubao' && (!visibleIds || !visibleIds.has(boundVid || ''))) continue;
       const key = `${accountId}:${fallbackApi}`;
       if (this.resolvedDolaFallbackApis.has(key) || this.resolvingDolaFallbackApis.has(key)) continue;
       const operation = Symbol(); this.resolvingDolaFallbackApis.set(key, operation);
@@ -1505,10 +1555,10 @@ export class BrowserManager {
         // exposes the same fallback API again.
         this.resolvedDolaFallbackApis.add(key);
         this.resolverDiagnosticSink?.(`[video-resolver] platform=${platform} account=${accountId} result=resolved host=${new URL(resolved.videoUrl).hostname}`);
-        let vid: string | undefined;
-        try { const query = new URL(fallbackApi).searchParams; vid = query.get('video_id') || query.get('vid') || undefined; } catch { /* extractor already validates the URL */ }
+        let vid: string | undefined = boundVid;
+        try { const query = new URL(fallbackApi).searchParams; vid = vid || query.get('video_id') || query.get('vid') || undefined; } catch { /* extractor already validates the URL */ }
         if (platform === 'doubao' && vid) this.doubaoPlayInfoApis.set(`${accountId}:${vid}`, fallbackApi);
-        this.mediaSink?.(accountId, { type: 'video', url: resolved.videoUrl, alternateUrls: resolved.alternateUrls, thumbUrl: resolved.posterUrl || undefined, vid, title: platform === 'doubao' ? '豆包原视频' : 'Dola 原视频', source: `${platform}-video-fallback-api`, confirmedNoWatermark: true, resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api' });
+        this.mediaSink?.(accountId, { type: 'video', capturePageUrl, url: resolved.videoUrl, alternateUrls: resolved.alternateUrls, thumbUrl: resolved.posterUrl || undefined, vid, title: platform === 'doubao' ? '豆包原视频' : 'Dola 原视频', source: `${platform}-video-fallback-api`, confirmedNoWatermark: true, resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api' });
       } catch (error) {
         if (this.resolvingDolaFallbackApis.get(key) !== operation) continue;
         const message = (error instanceof Error ? error.message : String(error)).replace(/https?:\/\/\S+/g, '[URL]');

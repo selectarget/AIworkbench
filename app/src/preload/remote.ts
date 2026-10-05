@@ -27,8 +27,8 @@ function report(resource: Captured): void {
   const alternateUrls = normalizeUrlList(resource.alternateUrls);
   const hasLocator = [resource.messageId, resource.conversationId, resource.shareId, resource.shareUrl, resource.threadUrl, resource.vid, resource.keySeed, resource.fplayUrl, resource.dolaRecordKey, resource.dolaCardId, resource.dolaVideoElementId].some((item) => Boolean(item && item.trim()));
   if (!url && !(resource.type === 'video' && hasLocator)) return;
-  const value = { ...resource, url, backupUrl: backupUrl || undefined, thumbUrl: thumbUrl || undefined, alternateUrls };
-  const key = `${resource.type}:${url || resource.messageId || resource.vid || resource.dolaRecordKey || resource.dolaCardId || resource.fplayUrl}`;
+  const value = { ...resource, capturePageUrl: location.href, url, backupUrl: backupUrl || undefined, thumbUrl: thumbUrl || undefined, alternateUrls };
+  const key = `${location.href}:${resource.type}:${url || resource.messageId || resource.vid || resource.dolaRecordKey || resource.dolaCardId || resource.fplayUrl}`;
   const signature = JSON.stringify([resource.autoDownload, backupUrl, alternateUrls, thumbUrl, resource.confirmedNoWatermark, resource.qualityEvidence, resource.resolutionMethod, resource.keySeed, resource.fplayUrl, resource.messageId, resource.vid, resource.shareId, resource.shareUrl, resource.threadUrl]);
   if (seen.has(`${key}:${signature}`)) return;
   seen.add(`${key}:${signature}`);

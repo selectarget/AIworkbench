@@ -28,25 +28,95 @@ function TaskProgress({ task }: { task: DownloadTask }): React.JSX.Element {
   return <><div className="material-progress"><span style={{ width: `${task.progress ?? 0}%` }} /></div><div className="material-transfer"><span>{bytes(task.receivedBytes)}{task.totalBytes ? ` / ${bytes(task.totalBytes)}` : ''}</span><span>{task.status === 'running' && task.speedBytesPerSecond ? `${bytes(task.speedBytesPerSecond)}/s` : taskState(task)}</span></div></>;
 }
 
-function MaterialCard({ resource, task, selected, account, onSelect, onPreview, onDownload, onCandidates, onRefresh, onResume, onReveal }: {
-  resource: MediaResource; task?: DownloadTask; selected: boolean; account: string;
-  onSelect(): void; onPreview(): void; onDownload(): void; onCandidates(): void; onRefresh(): void;
-  onResume(): void; onReveal(): void;
+function MaterialCard({
+  resource,
+  task,
+  selected,
+  account,
+  onSelect,
+  onPreview,
+  onDownload,
+  onCandidates,
+  onRefresh,
+  onResume,
+  onReveal
+}: {
+  resource: MediaResource;
+  task?: DownloadTask;
+  selected: boolean;
+  account: string;
+  onSelect(): void;
+  onPreview(): void;
+  onDownload(): void;
+  onCandidates(): void;
+  onRefresh(): void;
+  onResume(): void;
+  onReveal(): void;
 }): React.JSX.Element {
   const ref = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visible, setVisible] = useState(false);
   const [failed, setFailed] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
   const [more, setMore] = useState(false);
+  const [_isHovered, setIsHovered] = useState(false);
+
   const videoUrl = resource.previewUrl || resource.url;
   const poster = resource.previewThumbUrl || resource.thumbUrl;
+
   useEffect(() => {
-    const node = ref.current; if (!node) return;
-    const observer = new IntersectionObserver(([entry]) => { if (entry?.isIntersecting) { setVisible(true); observer.disconnect(); } }, { rootMargin: '120px' });
-    observer.observe(node); return () => observer.disconnect();
+    const node = ref.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '120px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
-  useEffect(() => { setFailed(false); setPosterFailed(false); }, [videoUrl, poster]);
-  const state = !resource.url ? '等待解析' : task ? taskState(task) : resource.previewStatus === 'loading' ? '准备预览' : resource.previewStatus === 'failed' ? '预览失败' : resource.previewCached ? '本地预览' : '可预览';
+
+  useEffect(() => {
+    setFailed(false);
+    setPosterFailed(false);
+  }, [videoUrl, poster]);
+
+  const handleMouseEnter = (): void => {
+    hoverTimerRef.current = setTimeout(() => {
+      setIsHovered(true);
+      if (videoRef.current && videoUrl && resource.type === 'video') {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(() => {});
+      }
+    }, 180);
+  };
+
+  const handleMouseLeave = (): void => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    setIsHovered(false);
+    if (videoRef.current && resource.type === 'video') {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0.1;
+    }
+  };
+
+  const state = !resource.url
+    ? '等待解析'
+    : task
+      ? taskState(task)
+      : resource.previewStatus === 'loading'
+        ? '准备预览'
+        : resource.previewStatus === 'failed'
+          ? '预览失败'
+          : resource.previewCached
+            ? '本地预览'
+            : '可预览';
+
   const busy = task?.status === 'running' || task?.status === 'queued';
   const error = task?.status === 'failed' ? task.error : resource.previewError;
   const downloadLabel =
@@ -69,7 +139,12 @@ function MaterialCard({ resource, task, selected, account, onSelect, onPreview, 
         : onDownload;
 
   return (
-    <article ref={ref} className={`material-card ${selected ? 'is-selected' : ''}`}>
+    <article
+      ref={ref}
+      className={`material-card ${selected ? 'is-selected' : ''}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <div className="material-cover">
         <button
           className="material-preview-button"
@@ -86,7 +161,9 @@ function MaterialCard({ resource, task, selected, account, onSelect, onPreview, 
             />
           ) : visible && videoUrl && !failed && resource.type === 'video' ? (
             <video
+              ref={videoRef}
               muted
+              loop
               playsInline
               preload="metadata"
               src={videoUrl}
@@ -118,13 +195,25 @@ function MaterialCard({ resource, task, selected, account, onSelect, onPreview, 
           />
         </label>
         <span className={`material-state ${task?.status || ''}`}>{state}</span>
-        {resource.duration ? (
-          <span className="material-duration">
-            {Math.floor(resource.duration / 60)}:
-            {String(Math.floor(resource.duration % 60)).padStart(2, '0')}
-          </span>
-        ) : null}
+
         <div className="material-cover-overlay">
+          <div className="material-cover-info">
+            <strong className="material-title" title={resource.title}>
+              {resource.title || (resource.type === 'video' ? '视频作品' : '图片作品')}
+            </strong>
+            <div className="material-meta">
+              <span className="material-account">{account}</span>
+              <span className="material-tag">
+                {resource.type === 'video' ? '视频' : '图片'}
+                {resource.confirmedNoWatermark ? ' · 原始' : ''}
+                {resource.duration
+                  ? ` · ${Math.floor(resource.duration / 60)}:${String(
+                      Math.floor(resource.duration % 60)
+                    ).padStart(2, '0')}`
+                  : ''}
+              </span>
+            </div>
+          </div>
           <div className="material-actions">
             <button
               disabled={!videoUrl}
@@ -160,24 +249,11 @@ function MaterialCard({ resource, task, selected, account, onSelect, onPreview, 
             </button>
           </div>
         </div>
-      </div>
-      <div className="material-body">
-        <strong title={resource.title}>
-          {resource.title || (resource.type === 'video' ? '视频作品' : '图片作品')}
-        </strong>
-        <div className="material-meta">
-          <span>{account}</span>
-          <span>
-            {resource.width && resource.height
-              ? `${resource.width} × ${resource.height}`
-              : resource.type === 'video'
-                ? '视频'
-                : '图片'}
-            {resource.confirmedNoWatermark ? ' · 原始' : ''}
-          </span>
-        </div>
+
         {task && ['running', 'queued', 'paused'].includes(task.status) && (
-          <TaskProgress task={task} />
+          <div className="material-cover-progress">
+            <TaskProgress task={task} />
+          </div>
         )}
         {error && (
           <p className="material-error" role="status">

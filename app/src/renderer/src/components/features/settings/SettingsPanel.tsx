@@ -311,6 +311,28 @@ export function SettingsPanel({
       </div>
       <div className="setting-row" data-settings-section="general">
         <span>
+          <strong>显示待下载素材面板</strong>
+          <small>
+            控制右侧待下载素材与任务队列列表的展开或收起；也可通过顶部栏快捷按钮或快捷键 Shift+M 随时切换。
+          </small>
+        </span>
+        <button
+          type="button"
+          className="capture-switch"
+          role="switch"
+          aria-label="显示待下载素材面板"
+          aria-checked={!settings.resourcesCollapsed}
+          onClick={() =>
+            void onChange({
+              resourcesCollapsed: !settings.resourcesCollapsed
+            })
+          }
+        >
+          <span />
+        </button>
+      </div>
+      <div className="setting-row" data-settings-section="general">
+        <span>
           <strong>域名拦截兼容</strong>
           <small>
             适用于已拦截相关域名的网络环境：提前取消五个固定域名的后台请求，减少重复 SSL

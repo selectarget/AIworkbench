@@ -102,6 +102,7 @@ function makeAccount(index) {
 
 const accounts = Array.from({ length: 18 }, (_value, index) => makeAccount(index + 1));
 const activeAccount = accounts.find((account) => account.platform === 'doubao') ?? accounts[0];
+activeAccount.browser.lastUrl = 'https://www.doubao.com/chat/gui-current';
 const svgPreview = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#725cff"/><stop offset="1" stop-color="#3ea7ff"/></linearGradient></defs><rect width="640" height="360" fill="#10182b"/><rect x="22" y="22" width="596" height="316" rx="28" fill="url(#g)" opacity=".85"/><circle cx="180" cy="180" r="72" fill="#fff" opacity=".24"/><path d="M330 130h160v28H330zm0 52h120v28H330z" fill="#fff" opacity=".88"/></svg>');
 const resources = [
   {
@@ -121,7 +122,8 @@ const resources = [
     qualityEvidence: 'platform-api',
     rejectedCandidates: ['https://cdn.example.com/expired-candidate.png'],
     source: 'GUI fixture',
-    accountId: accounts[0].id,
+    accountId: activeAccount.id,
+    capturePageUrl: activeAccount.browser.lastUrl,
     capturedAt: now
   },
   {
@@ -134,7 +136,8 @@ const resources = [
     previewThumbUrl: svgPreview,
     title: 'V5.2 视频通道预览',
     source: 'doubao_download_info',
-    accountId: accounts[0].id,
+    accountId: activeAccount.id,
+    capturePageUrl: activeAccount.browser.lastUrl,
     capturedAt: now,
     confirmedNoWatermark: true,
     qualityEvidence: 'platform-api',
@@ -146,10 +149,14 @@ const resources = [
     url: '',
     title: '待解析视频资源',
     source: 'Dola fixture',
-    accountId: accounts[1].id,
+    accountId: activeAccount.id,
+    capturePageUrl: activeAccount.browser.lastUrl,
     capturedAt: now
   }
 ];
+
+resources.push({ ...resources[1], id: 'gui-other-conversation', title: 'OTHER_CONVERSATION_MUST_HIDE', conversationId: 'gui-other' });
+resources.push({ ...resources[1], id: 'gui-other-account', accountId: accounts[1].id, title: 'OTHER_ACCOUNT_MUST_HIDE' });
 
 const settings = {
   schemaVersion: 2,
@@ -498,7 +505,8 @@ async function main() {
   if (result.title !== 'AI创作工作台') throw new Error(`unexpected GUI title: ${result.title}`);
   if (result.accountCards < 12) throw new Error(`expected account cards to render, received ${result.accountCards}`);
   if (result.accountCardsVisible < 12) throw new Error(`expected account cards to be visible, received ${result.accountCardsVisible}`);
-  if (result.mediaCards < 2) throw new Error(`expected media cards to render, received ${result.mediaCards}`);
+  if (await window.webContents.executeJavaScript(`document.body.textContent.includes('OTHER_CONVERSATION_MUST_HIDE') || document.body.textContent.includes('OTHER_ACCOUNT_MUST_HIDE')`)) throw new Error('unrelated conversation leaked into material panel');
+  if (result.mediaCards !== 2) throw new Error(`expected media cards to render, received ${result.mediaCards}`);
   if (!result.columns.accounts || !result.columns.browser || !result.columns.media) throw new Error(`workspace columns are not visible: ${JSON.stringify(result.columns)}`);
   if (result.hasAddressBar) throw new Error('addressbar should be removed');
   if (result.hasToolbarMore) throw new Error('toolbar-more should be removed');

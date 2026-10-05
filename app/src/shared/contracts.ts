@@ -184,6 +184,7 @@ export const mediaResourceSchema = z.object({
   rejectedCandidates: z.array(z.string().max(2000)).max(100).optional(),
   messageId: z.string().optional(),
   conversationId: z.string().optional(),
+  capturePageUrl: z.string().max(16_384).optional(),
   shareId: z.string().optional(),
   shareUrl: z.string().optional(),
   threadUrl: z.string().optional(),

@@ -31,6 +31,7 @@ const externalBrowserLayoutSchema = z.object({ x: z.number().finite(), y: z.numb
 const dolaReferenceKindSchema = z.enum(['audio', 'video']);
 const faceGridSaveSchema = z.object({ inputPath: z.string().min(1).max(4096), outputDir: z.string().max(4096).optional(), mode: z.enum(['grid', 'regroup']), mime: z.enum(['image/png', 'image/jpeg', 'image/webp']), dataUrl: z.string().regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/).max(160_000_000), faceCount: z.number().int().min(0).max(1000), scaled: z.boolean() });
 const remoteMediaSchema = z.object({
+  capturePageUrl: z.string().max(16_384).optional(),
   type: z.enum(['image', 'video']), url: z.string().max(16_384), autoDownload: z.boolean().optional(), backupUrl: z.string().max(16_384).optional(), alternateUrls: z.array(z.string().max(16_384)).max(8).optional(), thumbUrl: z.string().max(16_384).optional(),
   title: z.string().max(500).optional(), source: z.string().max(160).optional(), width: z.number().finite().nonnegative().max(100_000).optional(), height: z.number().finite().nonnegative().max(100_000).optional(),
   duration: z.number().finite().nonnegative().max(86_400).optional(), confirmedNoWatermark: z.boolean().optional(), resolutionMethod: z.string().max(160).optional(), qualityEvidence: z.enum(['unknown', 'dom-direct', 'platform-api', 'decoded-token', 'server-original']).optional(),
@@ -325,12 +326,16 @@ export function registerIpc(window: BrowserWindow, services: Services): () => vo
     const hasDolaLocator = [parsed.data.messageId, parsed.data.shareId, parsed.data.shareUrl, parsed.data.threadUrl, parsed.data.vid, parsed.data.keySeed, parsed.data.fplayUrl, parsed.data.dolaRecordKey, parsed.data.dolaCardId, parsed.data.dolaVideoElementId].some((item) => Boolean(item?.trim()));
     if (!parsed.data.url && (account.platform !== 'dola' || parsed.data.type !== 'video' || !hasDolaLocator)) return;
     if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), parsed.data)) return;
-    const added = media.add(accountId, parsed.data);
+    const captured = { ...parsed.data, capturePageUrl: parsed.data.capturePageUrl || senderFrame.url || event.sender.getURL() };
+    void browser.validateCapturedMedia(accountId, captured).then(accepted => {
+    if (!accepted) return;
+    const added = media.add(accountId, captured);
     // A page-side capture asked for this download, not the user: the page types the URL by
     // guessing, so a wrong guess fetches an HTML page. Those failures are marked automatic and
     // stay out of the queue - see downloadTaskSchema. The user's own 下载 still reports.
     if (added && parsed.data.autoDownload && added.url) media.enqueue(added.id, { automatic: true });
     if (added) void media.materializeBlobPreview(added.id).catch(() => undefined);
+    }).catch(() => undefined);
   };
   ipcMain.on(channels.remoteMedia, remoteMediaHandler);
   eventDisposers.push(() => ipcMain.removeListener(channels.remoteMedia, remoteMediaHandler));

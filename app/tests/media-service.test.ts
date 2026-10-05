@@ -509,3 +509,22 @@ describe('failed download rows', () => {
     expect(service.list().some((item) => item.id === broken.id)).toBe(true);
   });
 });
+
+
+describe('video identity and cover ownership', () => {
+  it('does not merge different videos sharing an encryption seed or a message', () => {
+    const { service } = setup();
+    const first = service.add('account_1', { type: 'video', url: 'https://cdn.example/bridge.mp4', source: 'doubao-video-fallback-api', qualityEvidence: 'platform-api', resolutionMethod: 'fallback_api', confirmedNoWatermark: true, vid: 'bridge', keySeed: 'shared-seed', messageId: 'same-message' })!;
+    const second = service.add('account_1', { type: 'video', url: 'https://cdn.example/village.mp4', source: 'doubao-video-fallback-api', qualityEvidence: 'platform-api', resolutionMethod: 'fallback_api', confirmedNoWatermark: true, vid: 'village', keySeed: 'shared-seed', messageId: 'same-message' })!;
+    expect(second.id).not.toBe(first.id);
+    expect(service.list()).toHaveLength(2);
+  });
+  it('does not attach an unbound cover just because there is only one video', () => {
+    const { service } = setup();
+    service.add('account_1', { type: 'video', url: 'https://cdn.example/village.mp4', source: 'doubao-video-fallback-api', qualityEvidence: 'platform-api', resolutionMethod: 'fallback_api', confirmedNoWatermark: true, vid: 'village' });
+    service.add('account_1', { type: 'image', url: 'https://cdn.example/video-cover.jpg', source: 'video-cover', vid: 'bridge' });
+    expect(service.list()[0]!.thumbUrl).toBeUndefined();
+    service.add('account_1', { type: 'image', url: 'https://cdn.example/video-cover-correct.jpg', source: 'video-cover', vid: 'village' });
+    expect(service.list()[0]!.thumbUrl).toBe('https://cdn.example/video-cover-correct.jpg');
+  });
+});

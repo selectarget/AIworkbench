@@ -194,8 +194,8 @@ async function createWindow(): Promise<BrowserWindow> {
     mediaProtocolInstalled = true;
   }
   activeMedia = media;
-  browser.setMediaSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, resource); if (added) void media.materializeBlobPreview(added.id).catch(() => undefined); });
-  browser.setSiteDownloadSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, resource); if (added) { media.enqueue(added.id); void media.materializeBlobPreview(added.id).catch(() => undefined); } });
+  browser.setMediaSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, browser.scopeCapturedMedia(accountId, resource)); if (added) void media.materializeBlobPreview(added.id).catch(() => undefined); });
+  browser.setSiteDownloadSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, browser.scopeCapturedMedia(accountId, resource)); if (added) { media.enqueue(added.id); void media.materializeBlobPreview(added.id).catch(() => undefined); } });
   browser.setNativeDownloadSink((notice) => { if (!window.isDestroyed()) window.webContents.send(channels.filesDownloaded, notice); });
   browser.setNativeDownloadPathResolver((accountId, filename) => media.reserveNativeDownloadPath(accountId, filename), (path) => media.releaseReservedDownloadPath(path));
   const migration = new LegacyMigrationService(window, accounts, join(paths.config, 'accounts.json'), (accountId, bundle) => browser.importStorage(accountId, bundle), settings);

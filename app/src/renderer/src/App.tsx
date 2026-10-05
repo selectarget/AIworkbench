@@ -15,6 +15,7 @@ import {
   type ProxyRuntimeState,
   type SessionDataKind
 } from '../../shared/contracts';
+import { mediaBelongsToPage } from '../../shared/media-scope';
 import { unwrap } from './utils/formatters';
 import { isWindowsPlatform } from './utils/dom';
 import {
@@ -61,6 +62,7 @@ import { HelpPanel } from './components/features/tools/HelpPanel';
 import { MediaPreviewModal } from './components/features/media/MediaPreviewModal';
 import { CandidateModal } from './components/features/media/CandidateModal';
 import { Modal } from './components/ui/Modal';
+import { ToastContainer, type ToastMessage } from './components/ui/Toast';
 
 const emptyProxy: ProxyConfig = proxySchema.parse({});
 const emptyInput: AccountInput = {
@@ -125,7 +127,23 @@ export function App(): React.JSX.Element {
   const [newAccountCount, setNewAccountCount] = useState(1);
   const [startAfterCreate, setStartAfterCreate] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('就绪');
+  const [status, _setStatus] = useState('就绪');
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const setStatus = useCallback((message: string | ((prev: string) => string)) => {
+    _setStatus((prev) => {
+      const next = typeof message === 'function' ? message(prev) : message;
+      if (next && next !== '就绪' && next !== '等待中' && next !== prev) {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        setToasts((t) => [...t.slice(-2), { id, message: next }]);
+        setTimeout(() => {
+          setToasts((t) => t.filter((item) => item.id !== id));
+        }, 3000);
+      }
+      return next;
+    });
+  }, []);
+
   const [runtimeState, setRuntimeState] = useState<ProxyRuntimeState | null>(null);
   const [address, setAddress] = useState('');
   const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -285,10 +303,19 @@ export function App(): React.JSX.Element {
         event.preventDefault();
         window.setTimeout(() => searchRef.current?.focus(), 0);
       }
+      if ((event.shiftKey || event.altKey) && event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        if (settings) {
+          void window.workbench.settings
+            .update({ resourcesCollapsed: !settings.resourcesCollapsed })
+            .then(unwrap)
+            .then(setSettings);
+        }
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [candidateResource, modal, previewResource, tabMenu, tabOverviewOpen]);
+  }, [candidateResource, modal, previewResource, tabMenu, tabOverviewOpen, settings]);
 
   useEffect(() => {
     if (!tabOverviewOpen) return;
@@ -1456,10 +1483,22 @@ export function App(): React.JSX.Element {
           }}
           onClearDoubaoHistory={() => void clearDoubaoHistory()}
           onNewAccount={newAccount}
+          onToggleResources={() =>
+            settings &&
+            void window.workbench.settings
+              .update({ resourcesCollapsed: !settings.resourcesCollapsed })
+              .then(unwrap)
+              .then(setSettings)
+          }
+          onOpenLibrary={() => setModal('library')}
         />
 
         <MediaPanel
-          resources={resources}
+          resources={resources.filter(resource => {
+            const active = accounts.find(account => account.id === activeId);
+            if (!active || resource.accountId !== active.id) return false;
+            return !['doubao', 'dola'].includes(active.platform) || mediaBelongsToPage(resource, active.browser.lastUrl);
+          })}
           tasks={tasks}
           selected={selectedMedia}
           parseImages={settings?.parseImages ?? false}
@@ -1640,6 +1679,11 @@ export function App(): React.JSX.Element {
           onClose={() => setCandidateResource(null)}
         />
       )}
+
+      <ToastContainer
+        toasts={toasts}
+        onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
+      />
     </div>
   );
 }

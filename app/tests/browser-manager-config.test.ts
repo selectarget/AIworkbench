@@ -420,9 +420,9 @@ describe('browser account reconfiguration', () => {
     const resolver = { resolve: vi.fn().mockResolvedValue({ videoUrl: 'https://v26-vdl.doubao.com/original.mp4', posterUrl: 'https://cdn.example/cover.jpg' }) };
     (manager as unknown as { dolaResolver: typeof resolver }).dolaResolver = resolver;
     const sink = vi.fn(); manager.setMediaSink(sink);
-    const resolveFallbacks = (manager as unknown as { resolveDolaFallbacks(id: string, body: string, referer: string, platform: 'doubao'): Promise<void> }).resolveDolaFallbacks.bind(manager);
+    const resolveFallbacks = (manager as unknown as { resolveDolaFallbacks(id: string, body: string, referer: string, platform: 'doubao', capturePageUrl: string, visibleIds: Set<string>): Promise<void> }).resolveDolaFallbacks.bind(manager);
     const api = 'https://www.doubao.com/samantha/media/get_play_info?video_id=vid-1';
-    await resolveFallbacks('account_1', JSON.stringify({ fallback_api: api }), 'https://www.doubao.com/', 'doubao');
+    await resolveFallbacks('account_1', JSON.stringify({ fallback_api: api }), 'https://www.doubao.com/', 'doubao', 'https://www.doubao.com/chat/123', new Set(['vid-1']));
     expect(resolver.resolve).toHaveBeenCalledWith(api, undefined, 'https://www.doubao.com/');
     expect(sink).toHaveBeenCalledWith('account_1', expect.objectContaining({ source: 'doubao-video-fallback-api', vid: 'vid-1', confirmedNoWatermark: true, resolutionMethod: 'fallback_api' }));
   });
@@ -675,4 +675,84 @@ describe('browser account reconfiguration', () => {
     await inject(account, view);
     expect(executeJavaScript).toHaveBeenCalledTimes(4);
   });
+});
+
+
+describe('permission callbacks after account removal', () => {
+  function fixture() {
+    const manager = new BrowserManager({} as never, { list: () => [] } as never, {} as never);
+    const target = { webRequest: { onBeforeRequest: vi.fn() }, setUserAgent: vi.fn(), setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), on: vi.fn(), off: vi.fn() };
+    const internal = manager as unknown as { configureSession(account: unknown, target: unknown): void; permissionGrants: Map<string, Set<string>> };
+    internal.configureSession({ id: 'permission_account', name: '权限测试', platform: 'kimi', fingerprint: { seed: '' } }, target);
+    const check = target.setPermissionCheckHandler.mock.calls[0]![0] as (...args: unknown[]) => boolean;
+    const request = target.setPermissionRequestHandler.mock.calls[0]![0] as (...args: unknown[]) => void;
+    return { internal, check, request };
+  }
+  it('denies late permission checks after permissions are removed without throwing', () => {
+    const f = fixture();
+    f.internal.permissionGrants.get('permission_account')!.add('media:https://example.test');
+    expect(f.check(null, 'media', 'https://example.test')).toBe(true);
+    f.internal.permissionGrants.delete('permission_account');
+    expect(f.check(null, 'media', 'https://example.test')).toBe(false);
+    expect(f.check(null, 'fullscreen', 'https://example.test')).toBe(false);
+  });
+  it('does not prompt for a removed account', () => {
+    const f = fixture();
+    f.internal.permissionGrants.delete('permission_account');
+    vi.mocked(dialog.showMessageBox).mockClear();
+    const callback = vi.fn();
+    f.request({ isDestroyed: () => false }, 'media', callback, { requestingUrl: 'https://example.test' });
+    expect(callback).toHaveBeenCalledExactlyOnceWith(false);
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+  it('rejects approval that arrives after an account is removed and reopened', async () => {
+    const f = fixture();
+    let approve!: (value: { response: number; checkboxChecked: boolean }) => void;
+    vi.mocked(dialog.showMessageBox).mockImplementationOnce(() => new Promise(resolve => { approve = resolve; }));
+    const callback = vi.fn();
+    f.request({ isDestroyed: () => false }, 'media', callback, { requestingUrl: 'https://example.test' });
+    f.internal.permissionGrants.delete('permission_account');
+    f.internal.permissionGrants.set('permission_account', new Set());
+    approve({ response: 1, checkboxChecked: false });
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledExactlyOnceWith(false));
+    expect(f.check(null, 'media', 'https://example.test')).toBe(false);
+  });
+  it('rejects approval after the requesting page is destroyed', async () => {
+    const f = fixture();
+    let approve!: (value: { response: number; checkboxChecked: boolean }) => void;
+    vi.mocked(dialog.showMessageBox).mockImplementationOnce(() => new Promise(resolve => { approve = resolve; }));
+    let destroyed = false;
+    const callback = vi.fn();
+    f.request({ isDestroyed: () => destroyed }, 'media', callback, { requestingUrl: 'https://example.test' });
+    destroyed = true;
+    approve({ response: 1, checkboxChecked: false });
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledExactlyOnceWith(false));
+    expect(f.check(null, 'media', 'https://example.test')).toBe(false);
+  });
+});
+
+
+it('resolves only the village vid displayed on the current Doubao card, not other fallback APIs', async () => {
+  const manager = new BrowserManager({} as never, { list: () => [] } as never, {} as never);
+  const resolver = { resolve: vi.fn().mockResolvedValue({ videoUrl: 'https://cdn.example/village.mp4', posterUrl: 'https://cdn.example/village.jpg' }) };
+  (manager as unknown as { dolaResolver: typeof resolver }).dolaResolver = resolver;
+  const sink = vi.fn(); manager.setMediaSink(sink);
+  const resolve = (manager as unknown as { resolveDolaFallbacks(id: string, body: string, referer: string, platform: string, page: string, vids: Set<string>): Promise<void> }).resolveDolaFallbacks.bind(manager);
+  const village = 'https://www.doubao.com/samantha/media/get_play_info?video_id=village';
+  const bridge = 'https://www.doubao.com/samantha/media/get_play_info?video_id=bridge';
+  await resolve('account_1', JSON.stringify({ records: [...Array.from({ length: 10 }, (_, index) => ({ fallback_api: bridge + index })), { fallback_api: village }] }), 'https://www.doubao.com/', 'doubao', 'https://www.doubao.com/chat/current', new Set(['village']));
+  expect(resolver.resolve).toHaveBeenCalledExactlyOnceWith(village, undefined, 'https://www.doubao.com/');
+  expect(sink).toHaveBeenCalledExactlyOnceWith('account_1', expect.objectContaining({ vid: 'village', url: 'https://cdn.example/village.mp4', thumbUrl: 'https://cdn.example/village.jpg' }));
+});
+
+
+it('keeps the rendered card vid when the signed CDN API has no vid query parameter', async () => {
+  const manager = new BrowserManager({} as never, { list: () => [] } as never, {} as never);
+  const resolver = { resolve: vi.fn().mockResolvedValue({ videoUrl: 'https://cdn.example/village.mp4', posterUrl: 'https://cdn.example/village.jpg' }) };
+  (manager as unknown as { dolaResolver: typeof resolver }).dolaResolver = resolver;
+  const sink = vi.fn(); manager.setMediaSink(sink);
+  const resolve = (manager as unknown as { resolveDolaFallbacks(id: string, body: string, referer: string, platform: string, page: string, vids: Set<string>, apis: Map<string, string>): Promise<void> }).resolveDolaFallbacks.bind(manager);
+  const api = 'https://vas-lf-x.snssdk.com/video/opaque-path?key_seed=sample';
+  await resolve('account_1', '{}', 'https://www.doubao.com/', 'doubao', 'https://www.doubao.com/chat/current', new Set(['village']), new Map([[api, 'village']]));
+  expect(sink).toHaveBeenCalledExactlyOnceWith('account_1', expect.objectContaining({ vid: 'village', url: 'https://cdn.example/village.mp4' }));
 });

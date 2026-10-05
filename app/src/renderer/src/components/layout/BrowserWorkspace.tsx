@@ -34,6 +34,8 @@ export interface BrowserWorkspaceProps {
   onSecondaryChange: (id: string | null) => void;
   onClearDoubaoHistory: () => void;
   onNewAccount: () => void;
+  onToggleResources?: () => void;
+  onOpenLibrary?: () => void;
 }
 
 export function BrowserWorkspace({
@@ -60,7 +62,9 @@ export function BrowserWorkspace({
   onSetTabMenu,
   onSecondaryChange,
   onClearDoubaoHistory,
-  onNewAccount
+  onNewAccount,
+  onToggleResources,
+  onOpenLibrary
 }: BrowserWorkspaceProps): React.JSX.Element {
   return (
     <section className="browser-panel">
@@ -109,6 +113,13 @@ export function BrowserWorkspace({
                     y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))
                   });
                 }}
+                onAuxClick={(event) => {
+                  if (event.button === 1) {
+                    event.preventDefault();
+                    onCloseTab(id);
+                  }
+                }}
+                title={`${accountName(id)} (中键可直接关闭)`}
               >
                 <button
                   type="button"
@@ -224,6 +235,18 @@ export function BrowserWorkspace({
           >
             <Icon name="trash" size={13} />
             <span>一键清理</span>
+          </button>
+        )}
+        {settings?.resourcesCollapsed && onToggleResources && (
+          <button
+            type="button"
+            className="expand-resources-button"
+            aria-label="展开素材栏"
+            title="展开右侧待下载素材栏 (快捷键 Shift+M)"
+            onClick={onToggleResources}
+          >
+            <Icon name="grid" size={13} />
+            <span>展开素材栏</span>
           </button>
         )}
       </div>

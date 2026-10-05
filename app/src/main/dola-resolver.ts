@@ -166,7 +166,7 @@ export function parseDolaResolveResponse(json: string): DolaResolveResult {
   return { videoUrl: urls[0], alternateUrls: urls.slice(1), posterUrl: findString(payload, 'poster_url') };
 }
 
-export function extractDolaFallbackApis(text: string): string[] {
+export function extractDolaFallbackApis(text: string, acceptedVideoIds?: ReadonlySet<string>): string[] {
   const result = new Set<string>();
   const pending: Array<{ value: string; depth: number }> = [{ value: text, depth: 0 }];
   const seen = new Set<string>();
@@ -182,6 +182,7 @@ export function extractDolaFallbackApis(text: string): string[] {
     const candidate = decodeStringLiteral(value).trim();
     try {
       const url = new URL(candidate);
+      if (acceptedVideoIds && !acceptedVideoIds.has(url.searchParams.get('video_id') || url.searchParams.get('vid') || '')) return;
       if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname) result.add(candidate);
     } catch { /* Ignore malformed candidates just like the old resolver. */ }
   };

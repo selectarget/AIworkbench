@@ -304,7 +304,7 @@ function stableMetadata(value: Record<string, unknown>): Pick<CapturedCandidate,
   const text = (...keys: string[]): string | undefined => { for (const key of keys) if (value[key] != null && String(value[key]).trim()) return String(value[key]).trim(); return undefined; };
   return {
     messageId: text('message_id', 'messageId', 'item_message_id', 'itemMessageId'),
-    conversationId: text('conversation_id', 'conversationId', 'conversationID', 'conversation'),
+    conversationId: text('conversation_id', 'conversationId', 'conversationID', 'conversation', 'thread_id', 'threadId', 'chat_id', 'chatId'),
     shareId: text('share_id', 'shareId', 'shareID'),
     shareUrl: text('share_url', 'shareUrl', 'shareURL'),
     threadUrl: text('thread_url', 'threadUrl', 'threadURL'),

@@ -876,13 +876,13 @@ export class MediaService {
 
   private attachCover(accountId: string, cover: MediaResource): MediaResource | null {
     const videos = [...this.resources.values()].filter((item) => item.accountId === accountId && item.type === 'video' && (!item.thumbUrl || sharesStableId(item, cover)));
-    const match = videos.find((item) => sharesStableId(item, cover)) ?? (videos.length === 1 ? videos[0] : undefined); if (!match) return null;
+    const match = videos.find((item) => sharesStableId(item, cover)); if (!match) return null;
     const merged = mergeResource(match, { ...match, thumbUrl: cover.url, width: match.width ?? cover.width, height: match.height ?? cover.height, capturedAt: match.capturedAt });
     this.resources.set(match.id, merged); return merged;
   }
   private applyPendingCover(video: MediaResource): MediaResource {
     const pending = this.pendingCovers.get(video.accountId) ?? []; if (!pending.length) return video;
-    const index = pending.findIndex((cover) => sharesStableId(video, cover)); const selected = index >= 0 ? pending[index] : pending.length === 1 ? pending[0] : undefined; if (!selected) return video;
+    const index = pending.findIndex((cover) => sharesStableId(video, cover)); const selected = index >= 0 ? pending[index] : undefined; if (!selected) return video;
     this.pendingCovers.set(video.accountId, pending.filter((item) => item !== selected));
     return { ...video, thumbUrl: video.thumbUrl || selected.url, width: video.width ?? selected.width, height: video.height ?? selected.height };
   }
@@ -1082,16 +1082,18 @@ function isPotentialVideoCover(resource: MediaResource, platform: PlatformId): b
   return coverSignal.test(text) && /video|vod|播放|生成视频|原视频|fplay/.test(text);
 }
 
-function stableIds(resource: Partial<MediaResource>): string[] {
-  return [resource.dolaRecordKey, resource.dolaCardId, resource.dolaVideoElementId, resource.messageId, resource.vid, resource.keySeed, resource.fplayUrl].filter((item): item is string => Boolean(item));
+function sharesStableId(a: Partial<MediaResource>, b: Partial<MediaResource>): boolean {
+  if (a.vid && b.vid && a.vid !== b.vid) return false;
+  // Encryption seeds are shared across assets; different locator fields are not interchangeable ids.
+  return (['vid', 'messageId', 'dolaRecordKey', 'dolaCardId', 'dolaVideoElementId', 'fplayUrl'] as const).some(key => Boolean(a[key]) && a[key] === b[key]);
 }
-function sharesStableId(a: Partial<MediaResource>, b: Partial<MediaResource>): boolean { const ids = new Set(stableIds(a)); return stableIds(b).some((id) => ids.has(id)); }
 function semanticIdentity(value: Record<string, unknown>, url: string): string {
-  for (const key of ['dolaRecordKey', 'dolaCardId', 'dolaVideoElementId', 'messageId', 'vid', 'keySeed', 'fplayUrl']) if (value[key]) return `${key}:${String(value[key])}`;
+  for (const key of ['vid', 'dolaRecordKey', 'dolaCardId', 'dolaVideoElementId', 'messageId', 'fplayUrl']) if (value[key]) return `${key}:${String(value[key])}`;
   return resourceIdentity(url, String(value.type) === 'image');
 }
 function isSameResource(a: MediaResource, b: MediaResource): boolean {
   if (a.type !== b.type || a.accountId !== b.accountId) return false;
+  if (a.vid && b.vid && a.vid !== b.vid) return false;
   if (sharesStableId(a, b)) return true;
   const asset = doubaoVideoAssetIdentity(a.url);
   if (a.type === 'video' && asset && asset === doubaoVideoAssetIdentity(b.url)) return true;

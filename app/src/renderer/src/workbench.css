@@ -103,6 +103,13 @@
 :root[data-theme="light"] .preview-actions button:disabled{background:#f8fafc;color:#94a3b8;border-color:#e2e8f0}
 .account-card.has-video-notice{border-color:#f0b45b66;background:linear-gradient(90deg,#f0b45b18,#ffffff04)}.account-video-notice{display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;background:#f0b45b;color:#2c1b08;font-size:9px;font-style:normal;font-weight:700;vertical-align:1px}.tab.has-video-notice:not(.active){color:#f3c66b}.tab-label{display:flex;align-items:center;gap:5px;min-width:0}.tab-video-dot{color:#f0b45b;font-size:10px;font-style:normal;text-shadow:0 0 7px #f0b45b}
 :root[data-theme="light"] .account-card.has-video-notice{border-color:#d4932c88;background:#fff7e6}:root[data-theme="light"] .account-video-notice{color:#2c1b08;background:#f0b45b}:root[data-theme="light"] .tab.has-video-notice:not(.active){color:#a45f0a}
+@keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(240, 180, 91, 0.5); transform: scale(1); } 50% { box-shadow: 0 0 0 4px rgba(240, 180, 91, 0.2); transform: scale(1.04); } }
+@keyframes pulse-notice-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.55; transform: scale(0.85); } }
+.account-card.has-video-notice .platform-dot { animation: pulse-glow 2.4s ease-in-out infinite; }
+.account-video-notice { animation: pulse-notice-dot 1.8s ease-in-out infinite; }
+.tab.has-video-notice .tab-video-dot { animation: pulse-notice-dot 1.8s ease-in-out infinite; }
+.account-card.open .platform-dot { position: relative; }
+.account-card.open .platform-dot::after { content: ''; position: absolute; bottom: -1px; right: -1px; width: 7px; height: 7px; border-radius: 50%; background: #10b981; border: 1.5px solid #fff; box-shadow: 0 0 4px rgba(16, 185, 129, 0.7); }
  .dola-task-account{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,280px) auto;gap:10px;align-items:center;margin-bottom:12px;padding:10px 12px;background:#101a2e;border:1px solid #ffffff12;border-radius:10px}.dola-task-account .section-heading{margin:0}.dola-task-account select{width:100%;background:#080d19;border:1px solid #ffffff16;border-radius:8px;color:inherit;padding:8px}.dola-task-account-count{color:var(--ui-muted);font-size:11px;white-space:nowrap}
 
 /* ==============================================================================
