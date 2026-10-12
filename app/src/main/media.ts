@@ -738,7 +738,8 @@ export class MediaService {
     const ses = session.fromPartition(`persist:account_${account.id}`);
     const referer = account.customUrl || platforms[account.platform].url;
     const origin = new URL(referer).origin;
-    const urls = uniqueResourceUrls([resource.url, resource.backupUrl, ...(resource.alternateUrls ?? [])]).filter((url) => account.platform !== 'doubao' || !isDoubaoPlaybackStream(url) || (resource.source === 'doubao-video-fallback-api' && url === resource.url));
+    const resolvedUrls = new Set(resource.resolvedDownloadUrls ?? []);
+    const urls = uniqueResourceUrls([resource.url, resource.backupUrl, ...(resource.alternateUrls ?? [])]).filter((url) => account.platform !== 'doubao' || !isDoubaoPlaybackStream(url) || resolvedUrls.has(url) || (resource.source === 'doubao-video-fallback-api' && url === resource.url));
     let lastError: unknown;
     const rejected: string[] = [];
     const rememberFailure = (url: string, error: unknown): void => {
@@ -983,11 +984,12 @@ function cleanRecord(value: Record<string, unknown>): Record<string, unknown> {
   }
   for (const key of ['messageId', 'conversationId', 'shareId', 'shareUrl', 'threadUrl', 'vid', 'keySeed', 'fplayUrl', 'dolaRecordKey', 'dolaCardId', 'dolaVideoElementId', 'backupUrl', 'thumbUrl']) if (result[key] != null) result[key] = String(result[key]).trim() || undefined;
   if (Array.isArray(result.alternateUrls)) result.alternateUrls = uniqueResourceUrls(result.alternateUrls);
+  if (Array.isArray(result.resolvedDownloadUrls)) result.resolvedDownloadUrls = uniqueResourceUrls(result.resolvedDownloadUrls, 9);
   return result;
 }
 
-function uniqueResourceUrls(values: unknown[]): string[] {
-  return [...new Set(values.map((value) => normalizeCapturedUrl(value)).filter(Boolean))].slice(0, 8);
+function uniqueResourceUrls(values: unknown[], limit = 8): string[] {
+  return [...new Set(values.map((value) => normalizeCapturedUrl(value)).filter(Boolean))].slice(0, limit);
 }
 
 function hasPendingMediaLocator(value: Record<string, unknown>): boolean {
@@ -1112,9 +1114,12 @@ function doubaoVideoAssetIdentity(value: string): string {
 }
 function mergeResource(current: MediaResource, incoming: MediaResource): MediaResource {
   const currentArea = (current.width ?? 0) * (current.height ?? 0); const incomingArea = (incoming.width ?? 0) * (incoming.height ?? 0);
-  const preferIncoming = !(isDoubaoPlaybackStream(incoming.url) && current.confirmedNoWatermark) && (Boolean(incoming.url) && !current.url || incoming.confirmedNoWatermark && !current.confirmedNoWatermark || incomingArea > currentArea || resourceIdentity(current.url) === resourceIdentity(incoming.url));
+  // Fresh originals replace stale signed URLs across CDN hosts; passive playback does not.
+  const resolvedOriginal = incoming.source === 'doubao-video-fallback-api' && incoming.resolvedDownloadUrls?.includes(incoming.url);
+  const preferIncoming = Boolean(resolvedOriginal) || !(isDoubaoPlaybackStream(incoming.url) && current.confirmedNoWatermark) && (Boolean(incoming.url) && !current.url || incoming.confirmedNoWatermark && !current.confirmedNoWatermark || incomingArea > currentArea || resourceIdentity(current.url) === resourceIdentity(incoming.url));
   const primary = preferIncoming ? incoming : current; const alternate = preferIncoming ? current : incoming;
   incoming = { ...incoming, source: primary.source, resolutionMethod: primary.resolutionMethod };
+  const resolvedDownloadUrls = uniqueResourceUrls([...(primary.resolvedDownloadUrls ?? []), ...(alternate.resolvedDownloadUrls ?? [])], 9);
   const evidenceRank: Record<NonNullable<MediaResource['qualityEvidence']>, number> = { unknown: 0, 'dom-direct': 1, 'decoded-token': 2, 'platform-api': 3, 'server-original': 4 };
   const currentEvidence = current.qualityEvidence ?? 'unknown'; const incomingEvidence = incoming.qualityEvidence ?? 'unknown'; const qualityEvidence = evidenceRank[incomingEvidence] >= evidenceRank[currentEvidence] ? incomingEvidence : currentEvidence;
   const url = primary.url || alternate.url;
@@ -1123,7 +1128,7 @@ function mergeResource(current: MediaResource, incoming: MediaResource): MediaRe
     ...(current.alternateUrls ?? []), ...(incoming.alternateUrls ?? []),
     current.url, current.backupUrl, incoming.url, incoming.backupUrl,
   ]).filter((candidate) => candidate !== url && candidate !== backupUrl).slice(0, 8);
-  return { ...current, ...incoming, id: current.id, url, backupUrl, alternateUrls, thumbUrl: incoming.thumbUrl || current.thumbUrl || (current.type === 'image' ? primary.url : undefined), messageId: incoming.messageId || current.messageId, conversationId: incoming.conversationId || current.conversationId, shareId: incoming.shareId || current.shareId, shareUrl: incoming.shareUrl || current.shareUrl, threadUrl: incoming.threadUrl || current.threadUrl, vid: incoming.vid || current.vid, keySeed: incoming.keySeed || current.keySeed, fplayUrl: incoming.fplayUrl || current.fplayUrl, dolaRecordKey: incoming.dolaRecordKey || current.dolaRecordKey, dolaCardId: incoming.dolaCardId || current.dolaCardId, dolaVideoElementId: incoming.dolaVideoElementId || current.dolaVideoElementId, width: primary.width ?? alternate.width, height: primary.height ?? alternate.height, capturedAt: current.capturedAt, confirmedNoWatermark: Boolean(current.confirmedNoWatermark || incoming.confirmedNoWatermark), qualityEvidence, resolutionMethod: qualityEvidence === incomingEvidence ? incoming.resolutionMethod ?? current.resolutionMethod : current.resolutionMethod ?? incoming.resolutionMethod, rejectedCandidates: [...new Set([...(current.rejectedCandidates ?? []), ...(incoming.rejectedCandidates ?? [])])].slice(0, 100) };
+  return { ...current, ...incoming, id: current.id, url, backupUrl, alternateUrls, resolvedDownloadUrls, thumbUrl: incoming.thumbUrl || current.thumbUrl || (current.type === 'image' ? primary.url : undefined), messageId: incoming.messageId || current.messageId, conversationId: incoming.conversationId || current.conversationId, shareId: incoming.shareId || current.shareId, shareUrl: incoming.shareUrl || current.shareUrl, threadUrl: incoming.threadUrl || current.threadUrl, vid: incoming.vid || current.vid, keySeed: incoming.keySeed || current.keySeed, fplayUrl: incoming.fplayUrl || current.fplayUrl, dolaRecordKey: incoming.dolaRecordKey || current.dolaRecordKey, dolaCardId: incoming.dolaCardId || current.dolaCardId, dolaVideoElementId: incoming.dolaVideoElementId || current.dolaVideoElementId, width: primary.width ?? alternate.width, height: primary.height ?? alternate.height, capturedAt: current.capturedAt, confirmedNoWatermark: Boolean(current.confirmedNoWatermark || incoming.confirmedNoWatermark), qualityEvidence, resolutionMethod: qualityEvidence === incomingEvidence ? incoming.resolutionMethod ?? current.resolutionMethod : current.resolutionMethod ?? incoming.resolutionMethod, rejectedCandidates: [...new Set([...(current.rejectedCandidates ?? []), ...(incoming.rejectedCandidates ?? [])])].slice(0, 100) };
 }
 function resourceIdentity(value: string, image = false): string {
   const normalized = normalizeCapturedUrl(value) || value;

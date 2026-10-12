@@ -172,6 +172,7 @@ export const mediaResourceSchema = z.object({
   previewCached: z.boolean().optional(),
   backupUrl: z.string().optional(),
   alternateUrls: z.array(z.string().max(16_384)).max(8).optional(),
+  resolvedDownloadUrls: z.array(z.string().max(16_384)).max(9).optional(),
   thumbUrl: z.string().optional(),
   title: z.string().default(''),
   width: z.number().optional(),

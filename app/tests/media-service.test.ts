@@ -16,6 +16,49 @@ function setup(persist = false, platform = 'doubao', resolveBlob?: (accountId: s
 async function waitFor(predicate: () => boolean): Promise<void> { for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 10)); } throw new Error('timeout'); }
 
 describe('media download queue', () => {
+  it('replaces a forbidden original with a fresh resolver URL on another CDN without repeating the rejected request', async () => {
+    const { service } = setup();
+    const oldUrl = 'https://v11-vdl.doubao.com/video/tos/current.mp4?signature=old';
+    const freshUrl = 'https://v26-vdl.doubao.com/video/tos/current.mp4?signature=fresh';
+    const original = { type: 'video', vid: 'current-video', source: 'doubao-video-fallback-api', resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true };
+    const resource = service.add('account_1', { ...original, url: oldUrl, resolvedDownloadUrls: [oldUrl] })!;
+    const refresh = vi.fn(async () => { service.add('account_1', { ...original, url: freshUrl, resolvedDownloadUrls: [freshUrl] }); });
+    service.setResourceRefresher(refresh);
+    fetchMock.mockResolvedValueOnce(new Response('forbidden', { status: 403 }))
+      .mockResolvedValueOnce(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([oldUrl, freshUrl]);
+    expect(service.list()[0]!.url).toBe(freshUrl);
+    expect(service.list()[0]!.backupUrl).toBe(oldUrl);
+  });
+
+  it('tries resolver-confirmed original CDN backups while skipping passive watermarked playback candidates', async () => {
+    const { service } = setup();
+    const primary = 'https://v11-vdl.doubao.com/video/tos/original.mp4';
+    const backup = 'https://v26-vdl.doubao.com/video/tos/original.mp4';
+    const playback = 'https://v3-vdl.doubao.com/video/tos/preview.mp4';
+    const resource = service.add('account_1', { type: 'video', vid: 'current-video', url: primary,
+      backupUrl: playback, alternateUrls: [backup], resolvedDownloadUrls: [primary, backup],
+      source: 'doubao-video-fallback-api', resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true })!;
+    fetchMock.mockResolvedValueOnce(new Response('forbidden', { status: 403 }))
+      .mockResolvedValueOnce(new Response('video', { headers: { 'content-type': 'video/mp4' } }));
+    service.enqueue(resource.id);
+    await waitFor(() => service.tasks()[0]?.status === 'completed');
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([primary, backup]);
+  });
+
+  it('keeps a fresh original when a passive playback capture arrives later', () => {
+    const { service } = setup();
+    const url = 'https://v26-vdl.doubao.com/video/tos/current.mp4?signature=fresh';
+    service.add('account_1', { type: 'video', vid: 'current-video', url, source: 'doubao-video-fallback-api',
+      resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api', confirmedNoWatermark: true, resolvedDownloadUrls: [url] });
+    service.add('account_1', { type: 'video', vid: 'current-video', url: 'https://v11-vdl.doubao.com/preview.mp4', source: 'cdp:doubao', width: 1920, height: 1080 });
+    expect(service.list()[0]!.url).toBe(url);
+    expect(service.list()[0]!.resolvedDownloadUrls).toEqual([url]);
+  });
+
   it('retains the same filename when pausing backoff before a partial file exists', async () => {
     const { service } = setup();
     const runtime = service as unknown as { settings: { get(): Record<string, unknown> } };

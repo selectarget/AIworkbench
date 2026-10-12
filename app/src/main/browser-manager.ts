@@ -980,6 +980,7 @@ export class BrowserManager {
     if (!api) throw new Error('尚未捕获当前作品的播放信息，请回到原对话点击视频播放后重试下载；无需打开“我的创作”');
     const resolved = await this.dolaResolver.resolve(api, session.fromPartition(`persist:account_${accountId}`), 'https://www.doubao.com/');
     this.mediaSink?.(accountId, { ...resource, type: 'video', url: resolved.videoUrl, alternateUrls: resolved.alternateUrls,
+      resolvedDownloadUrls: [resolved.videoUrl, ...(resolved.alternateUrls ?? [])].slice(0, 9),
       thumbUrl: resolved.posterUrl || undefined, source: 'doubao-video-fallback-api', confirmedNoWatermark: true,
       qualityEvidence: 'platform-api', resolutionMethod: 'fallback_api' });
     this.resolverDiagnosticSink?.(`[video-resolver] platform=doubao account=${accountId} result=resolved method=current-play-info host=${new URL(resolved.videoUrl).hostname}`);
@@ -1558,7 +1559,7 @@ export class BrowserManager {
         let vid: string | undefined = boundVid;
         try { const query = new URL(fallbackApi).searchParams; vid = vid || query.get('video_id') || query.get('vid') || undefined; } catch { /* extractor already validates the URL */ }
         if (platform === 'doubao' && vid) this.doubaoPlayInfoApis.set(`${accountId}:${vid}`, fallbackApi);
-        this.mediaSink?.(accountId, { type: 'video', capturePageUrl, url: resolved.videoUrl, alternateUrls: resolved.alternateUrls, thumbUrl: resolved.posterUrl || undefined, vid, title: platform === 'doubao' ? '豆包原视频' : 'Dola 原视频', source: `${platform}-video-fallback-api`, confirmedNoWatermark: true, resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api' });
+        this.mediaSink?.(accountId, { type: 'video', capturePageUrl, url: resolved.videoUrl, alternateUrls: resolved.alternateUrls, resolvedDownloadUrls: [resolved.videoUrl, ...(resolved.alternateUrls ?? [])].slice(0, 9), thumbUrl: resolved.posterUrl || undefined, vid, title: platform === 'doubao' ? '豆包原视频' : 'Dola 原视频', source: `${platform}-video-fallback-api`, confirmedNoWatermark: true, resolutionMethod: 'fallback_api', qualityEvidence: 'platform-api' });
       } catch (error) {
         if (this.resolvingDolaFallbackApis.get(key) !== operation) continue;
         const message = (error instanceof Error ? error.message : String(error)).replace(/https?:\/\/\S+/g, '[URL]');
