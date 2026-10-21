@@ -47,6 +47,8 @@ function revealPassword(password: string): string {
   try { return safeStorage.decryptString(Buffer.from(password.slice(4), 'base64')); } catch { return ''; }
 }
 
+const LAST_URL_FLUSH_DELAY_MS = 30_000;
+
 export class AccountService {
   restoreConfiguration(raw: Account[]): number {
     const incoming = accountListSchema.parse(raw);
@@ -56,7 +58,26 @@ export class AccountService {
     return incoming.length;
   }
   private readonly store: AtomicStore<Account[]>;
+  // Site navigation changes `lastUrl` many times per minute. Keep the latest
+  // value in memory (visible to list/get) and write it to disk in batches.
+  private readonly pendingLastUrls = new Map<string, string>();
+  private lastUrlTimer: NodeJS.Timeout | null = null;
   constructor(file: string) { this.store = new AtomicStore(file, accountListSchema, [], migrateAccounts); }
+
+  setLastUrl(id: string, url: string): void {
+    this.pendingLastUrls.set(id, url);
+    if (this.lastUrlTimer) return;
+    this.lastUrlTimer = setTimeout(() => { this.lastUrlTimer = null; this.flush(); }, LAST_URL_FLUSH_DELAY_MS);
+    this.lastUrlTimer.unref?.();
+  }
+  /** Writes navigation locations that are still held in memory. */
+  flush(): void {
+    if (this.lastUrlTimer) { clearTimeout(this.lastUrlTimer); this.lastUrlTimer = null; }
+    if (!this.pendingLastUrls.size) return;
+    const accounts = this.persisted();
+    this.pendingLastUrls.clear();
+    this.store.write(accounts);
+  }
 
   private persisted(): Account[] {
     const accounts = this.store.read().sort((a, b) => a.order - b.order);
@@ -65,7 +86,11 @@ export class AccountService {
       return { ...account, fingerprint: adaptFingerprintProfile(account.platform, fingerprint) };
     });
     if (normalized.some((account, index) => JSON.stringify(account.fingerprint) !== JSON.stringify(accounts[index]?.fingerprint))) this.store.write(normalized);
-    return normalized;
+    if (!this.pendingLastUrls.size) return normalized;
+    return normalized.map((account) => {
+      const lastUrl = this.pendingLastUrls.get(account.id);
+      return lastUrl === undefined ? account : { ...account, browser: { ...account.browser, lastUrl } };
+    });
   }
   private publicAccount(account: Account): Account {
     return { ...account, proxy: { ...account.proxy, password: revealPassword(account.proxy.password) }, browser: { ...account.browser }, fingerprint: { ...account.fingerprint, languages: [...account.fingerprint.languages] } };
@@ -123,6 +148,7 @@ export class AccountService {
 
   update(id: string, raw: Partial<AccountInput>): Account {
     const accounts = this.persisted();
+    if (raw.browser) this.pendingLastUrls.delete(id);
     const index = accounts.findIndex((account) => account.id === id);
     if (index < 0) throw new Error('账号不存在');
     const current = this.publicAccount(accounts[index]!);

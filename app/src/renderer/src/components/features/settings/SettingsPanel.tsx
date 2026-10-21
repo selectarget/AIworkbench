@@ -522,6 +522,26 @@ export function SettingsPanel({
             ))}
           </select>
         </label>
+        <label className="setting-row">
+          <span>
+            后台标签自动休眠
+            <small>未查看超过设定时间的后台标签会释放网页，点击标签即可唤醒；有下载任务的账号不会休眠</small>
+          </span>
+          <select
+            value={settings.idleSleepMinutes ?? 30}
+            onChange={(event) =>
+              void onChange({ idleSleepMinutes: Number(event.target.value) }).catch((error) =>
+                onStatus(String(error))
+              )
+            }
+          >
+            {[0, 15, 30, 60, 120].map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes ? `${minutes} 分钟` : '关闭'}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <div className="tool-box" data-settings-section="browser">
         <div className="section-heading">

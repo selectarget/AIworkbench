@@ -22,6 +22,8 @@ export default defineConfig({
   renderer: {
     root: resolve('src/renderer'),
     plugins: [tailwindcss(), react()],
-    resolve: { alias: { '@shared': resolve('src/shared') } }
+    resolve: { alias: { '@shared': resolve('src/shared') } },
+    // Transform the startup modules while Electron itself is still booting.
+    server: { warmup: { clientFiles: ['./src/main.tsx', './src/App.tsx', './src/*.css'] } }
   }
 });

@@ -28,6 +28,10 @@ export function captureModeAccepts(mode: AppSettings['captureMode'], raw: unknow
   return Boolean(raw && typeof raw === 'object' && (raw as { type?: unknown }).type === mode);
 }
 
+const PROGRESS_ONLY_KEYS: ReadonlySet<string> = new Set(['receivedBytes', 'totalBytes', 'progress', 'speedBytesPerSecond', 'remainingSeconds']);
+const TASK_PERSIST_DELAY_MS = 3000;
+const TASK_EMIT_DELAY_MS = 250;
+
 export class MediaService {
   private resources = new Map<string, MediaResource>();
   private taskMap = new Map<string, DownloadTask>();
@@ -49,6 +53,8 @@ export class MediaService {
   private readonly accountCooldowns = new Map<string, number>();
   private cooldownTimer?: ReturnType<typeof setTimeout>;
   private taskListener: ((tasks: DownloadTask[]) => void) | null = null;
+  private taskPersistTimer: NodeJS.Timeout | null = null;
+  private taskEmitTimer: NodeJS.Timeout | null = null;
   private resourceListener: ((resources: MediaResource[]) => void) | null = null;
   private readonly taskStore?: AtomicStore<DownloadTask[]>;
   private readonly pendingCovers = new Map<string, MediaResource[]>();
@@ -104,12 +110,29 @@ export class MediaService {
     this.resourceListener = listener;
     return () => { if (this.resourceListener === listener) this.resourceListener = null; };
   }
-  private emitTasks(): void { this.taskListener?.(this.tasks()); }
+  private emitTasks(): void { if (this.taskEmitTimer) { clearTimeout(this.taskEmitTimer); this.taskEmitTimer = null; } this.taskListener?.(this.tasks()); }
   private emitResources(): void { this.resourceListener?.(this.list()); }
   private updateTask(id: string, patch: Partial<DownloadTask>): DownloadTask {
     const current = this.taskMap.get(id); if (!current) throw new Error('下载任务不存在');
-    const next = { ...current, ...patch, updatedAt: new Date().toISOString() }; this.taskMap.set(id, next); this.persistTasks(); this.emitTasks(); return next;
+    const next = { ...current, ...patch, updatedAt: new Date().toISOString() }; this.taskMap.set(id, next);
+    // Byte counters change several times per second for every running task.
+    // Keep them in memory and coalesce the disk write and the renderer
+    // broadcast; status, phase, path and error changes are still immediate.
+    if (Object.keys(patch).every((key) => PROGRESS_ONLY_KEYS.has(key))) { this.schedulePersistTasks(); this.scheduleEmitTasks(); } else { this.persistTasks(); this.emitTasks(); }
+    return next;
   }
+  private schedulePersistTasks(): void {
+    if (this.taskPersistTimer) return;
+    this.taskPersistTimer = setTimeout(() => { this.taskPersistTimer = null; this.persistTasks(); }, TASK_PERSIST_DELAY_MS);
+    this.taskPersistTimer.unref?.();
+  }
+  private scheduleEmitTasks(): void {
+    if (this.taskEmitTimer) return;
+    this.taskEmitTimer = setTimeout(() => { this.taskEmitTimer = null; this.emitTasks(); }, TASK_EMIT_DELAY_MS);
+    this.taskEmitTimer.unref?.();
+  }
+  /** Writes progress that is still waiting for the coalesced task store write. */
+  flush(): void { if (this.taskPersistTimer) this.persistTasks(); }
 
   add(accountId: string, raw: unknown): MediaResource | null {
     if (!raw || typeof raw !== 'object') return null;
@@ -680,7 +703,7 @@ export class MediaService {
     }
   }
   resume(): void { void this.pump(); }
-  private persistTasks(): void { this.taskStore?.write(this.tasks()); }
+  private persistTasks(): void { if (this.taskPersistTimer) { clearTimeout(this.taskPersistTimer); this.taskPersistTimer = null; } this.taskStore?.write(this.tasks()); }
   private async run(id: string): Promise<void> {
     const task = this.taskMap.get(id)!; let resource = this.resources.get(task.resourceId); if (!resource) { this.updateTask(id, { status: 'failed', error: '请打开原视频对话重新捕获素材' }); return; }
     const controller = new AbortController(); this.aborters.set(id, controller); let file = ''; let partial = '';

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   browserProfileSchema,
   fingerprintSchema,
@@ -47,22 +47,26 @@ import { AppHeader } from './components/layout/AppHeader';
 import { AccountsSidebar } from './components/layout/AccountsSidebar';
 import { BrowserWorkspace } from './components/layout/BrowserWorkspace';
 import { MediaPanel } from './MediaPanel';
+import { useStableHandlers } from './utils/useStableHandlers';
 
-import { AccountModal } from './components/features/accounts/AccountModal';
-import { BulkProxyModal } from './components/features/accounts/BulkProxyModal';
-import { SettingsPanel } from './components/features/settings/SettingsPanel';
-import { LibraryModal } from './components/features/library/LibraryModal';
-import { LoginAssistModal } from './components/features/tools/LoginAssistModal';
-import { DolaBatchModal } from './components/features/tools/DolaBatchModal';
-import { HiggsfieldBatchModal } from './components/features/tools/HiggsfieldBatchModal';
-import { FaceGridPanel } from './components/features/tools/FaceGridPanel';
-import { MigrationPanel } from './components/features/tools/MigrationPanel';
-import { DiagnosticsPanel } from './components/features/tools/DiagnosticsPanel';
-import { HelpPanel } from './components/features/tools/HelpPanel';
-import { MediaPreviewModal } from './components/features/media/MediaPreviewModal';
-import { CandidateModal } from './components/features/media/CandidateModal';
 import { Modal } from './components/ui/Modal';
 import { ToastContainer, type ToastMessage } from './components/ui/Toast';
+
+// Dialogs and tool panels are loaded when first shown, keeping them out of the
+// startup bundle and the first Vite dev-server load.
+const AccountModal = lazy(() => import('./components/features/accounts/AccountModal').then((m) => ({ default: m.AccountModal })));
+const BulkProxyModal = lazy(() => import('./components/features/accounts/BulkProxyModal').then((m) => ({ default: m.BulkProxyModal })));
+const SettingsPanel = lazy(() => import('./components/features/settings/SettingsPanel').then((m) => ({ default: m.SettingsPanel })));
+const LibraryModal = lazy(() => import('./components/features/library/LibraryModal').then((m) => ({ default: m.LibraryModal })));
+const LoginAssistModal = lazy(() => import('./components/features/tools/LoginAssistModal').then((m) => ({ default: m.LoginAssistModal })));
+const DolaBatchModal = lazy(() => import('./components/features/tools/DolaBatchModal').then((m) => ({ default: m.DolaBatchModal })));
+const HiggsfieldBatchModal = lazy(() => import('./components/features/tools/HiggsfieldBatchModal').then((m) => ({ default: m.HiggsfieldBatchModal })));
+const FaceGridPanel = lazy(() => import('./components/features/tools/FaceGridPanel').then((m) => ({ default: m.FaceGridPanel })));
+const MigrationPanel = lazy(() => import('./components/features/tools/MigrationPanel').then((m) => ({ default: m.MigrationPanel })));
+const DiagnosticsPanel = lazy(() => import('./components/features/tools/DiagnosticsPanel').then((m) => ({ default: m.DiagnosticsPanel })));
+const HelpPanel = lazy(() => import('./components/features/tools/HelpPanel').then((m) => ({ default: m.HelpPanel })));
+const MediaPreviewModal = lazy(() => import('./components/features/media/MediaPreviewModal').then((m) => ({ default: m.MediaPreviewModal })));
+const CandidateModal = lazy(() => import('./components/features/media/CandidateModal').then((m) => ({ default: m.CandidateModal })));
 
 const emptyProxy: ProxyConfig = proxySchema.parse({});
 const emptyInput: AccountInput = {
@@ -77,6 +81,13 @@ const emptyInput: AccountInput = {
 };
 const MAX_STANDARD_ACCOUNT_CREATION = 100;
 
+// The three main panels re-render only when their data props change; their
+// callbacks come from useStableHandlers. Download progress therefore updates
+// the media panel without re-rendering the account list and tab bar.
+const MemoAccountsSidebar = memo(AccountsSidebar);
+const MemoBrowserWorkspace = memo(BrowserWorkspace);
+const MemoMediaPanel = memo(MediaPanel);
+
 export function App(): React.JSX.Element {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [platforms, setPlatforms] = useState<PlatformDefinition[]>([]);
@@ -86,6 +97,9 @@ export function App(): React.JSX.Element {
   const openTabsRef = useRef(openTabs);
   openTabsRef.current = openTabs;
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [sleepingTabs, setSleepingTabs] = useState<string[]>([]);
+  const sleepingTabsRef = useRef(sleepingTabs);
+  sleepingTabsRef.current = sleepingTabs;
   const [secondaryId, setSecondaryId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [groupFilter, setGroupFilter] = useState('');
@@ -189,29 +203,15 @@ export function App(): React.JSX.Element {
         setSettings(config);
         setResources(unwrap(m));
         setTasks(unwrap(t));
-        const valid = config.openTabs.filter((id) =>
-          accountRows.some((account) => account.id === id)
-        );
-        const { restored, failed } = await restoreOpenTabs(valid, (id) =>
-          window.workbench.browser.open(id)
-        );
-        const active = restored.includes(config.activeTabId ?? '')
-          ? config.activeTabId
-          : restored[0] ?? null;
-        const secondary =
-          config.dualView &&
-          restored.includes(config.secondaryTabId ?? '') &&
-          config.secondaryTabId !== active
-            ? config.secondaryTabId
-            : null;
-        setOpenTabs(restored);
-        setActiveId(active);
-        setSecondaryId(secondary);
-        await window.workbench.browser.activate(active, secondary);
-        if (failed.length) {
-          setStatus(`已恢复 ${restored.length} 个账号，${failed.length} 个账号打开失败，可稍后重试`);
-          await persistTabs(restored, active, secondary, config.dualView);
-        }
+        // Start with no account sessions. Each site page, proxy runtime and
+        // extension set is created only when the user opens that account, so
+        // the workbench is usable immediately after launch.
+        setOpenTabs([]);
+        setActiveId(null);
+        setSecondaryId(null);
+        await window.workbench.browser.activate(null, null);
+        if (config.openTabs.length || config.activeTabId || config.secondaryTabId)
+          await persistTabs([], null, null, config.dualView);
       })
       .catch(report);
 
@@ -244,6 +244,9 @@ export function App(): React.JSX.Element {
     const offProxy = window.workbench.proxy.onState((state) => {
       if (state.accountId === activeIdRef.current || !activeIdRef.current) setRuntimeState(state);
     });
+    const offSlept = window.workbench.browser.onSlept(({ accountId }) => {
+      setSleepingTabs((current) => (current.includes(accountId) ? current : [...current, accountId]));
+    });
     const offNavigation = window.workbench.browser.onNavigation((state) => {
       setAccounts((current) =>
         current.map((account) =>
@@ -261,6 +264,7 @@ export function App(): React.JSX.Element {
       offFileDownloaded();
       offVideoGenerated();
       offProxy();
+      offSlept();
       offNavigation();
     };
   }, [report, persistTabs]);
@@ -279,6 +283,13 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
+
+  useEffect(() => {
+    setSleepingTabs((current) => {
+      const next = current.filter((id) => openTabs.includes(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [openTabs]);
 
   useEffect(() => {
     const account = accounts.find((item) => item.id === activeId);
@@ -440,14 +451,17 @@ export function App(): React.JSX.Element {
     [filteredAccounts]
   );
 
-  const accountName = (id: string | null): string =>
-    accounts.find((account) => account.id === id)?.name ?? '未选择';
+  const accountName = useCallback(
+    (id: string | null): string => accounts.find((account) => account.id === id)?.name ?? '未选择',
+    [accounts]
+  );
   const activeAccount = accounts.find((account) => account.id === activeId);
 
   async function openAccount(id: string): Promise<void> {
     try {
       setBusy(true);
       unwrap(await window.workbench.browser.open(id));
+      setSleepingTabs((current) => current.filter((item) => item !== id));
       const tabs = openTabsRef.current.includes(id)
         ? openTabsRef.current
         : [...openTabsRef.current, id];
@@ -527,8 +541,21 @@ export function App(): React.JSX.Element {
     await persistTabs(tabs, next, second, settings?.dualView ?? false);
   }
 
+  /** Reopens a tab whose page was released by the idle-sleep policy. */
+  async function wakeTab(id: string): Promise<void> {
+    if (!sleepingTabsRef.current.includes(id)) return;
+    unwrap(await window.workbench.browser.open(id));
+    setSleepingTabs((current) => current.filter((item) => item !== id));
+  }
+
   async function selectTab(id: string): Promise<void> {
     setTabMenu(null);
+    try {
+      await wakeTab(id);
+    } catch (error) {
+      report(error);
+      return;
+    }
     setActiveId(id);
     setVideoNoticeByAccount((current) => {
       if (!(id in current)) return current;
@@ -1361,6 +1388,130 @@ export function App(): React.JSX.Element {
     setAccounts(unwrap(await window.workbench.accounts.reorder(ids)));
   }
 
+  const activeResources = useMemo(() => {
+    const active = accounts.find((account) => account.id === activeId);
+    if (!active) return [];
+    return resources.filter(
+      (resource) =>
+        resource.accountId === active.id &&
+        (!['doubao', 'dola'].includes(active.platform) ||
+          mediaBelongsToPage(resource, active.browser.lastUrl))
+    );
+  }, [accounts, activeId, resources]);
+
+  const sidebarHandlers = useStableHandlers({
+    onSearchChange: setSearch,
+    onGroupFilterChange: setGroupFilter,
+    onPlatformFilterChange: setPlatformFilter,
+    onToggleAccountTools: toggleAccountTools,
+    onToggleGroupCollapse: (groupName: string) =>
+      setCollapsedGroups((current) =>
+        current.includes(groupName)
+          ? current.filter((name) => name !== groupName)
+          : [...current, groupName]
+      ),
+    onOpenSettings: () => setModal('settings'),
+    onNewAccount: newAccount,
+    onManageGroup: manageGroup,
+    onDeleteGroupAccounts: () => void deleteGroupAccounts(),
+    onDeletePlatformAccounts: () => void deletePlatformAccounts(),
+    onImportAccounts: () =>
+      window.workbench.accounts
+        .import()
+        .then(() => window.workbench.accounts.list())
+        .then(unwrap)
+        .then(setAccounts)
+        .catch(report),
+    onExportAccounts: () =>
+      window.workbench.accounts
+        .export()
+        .then(unwrap)
+        .then((x) => setStatus(`已导出：${x.path}`))
+        .catch(report),
+    onOpenFilteredAccounts: () => void openFilteredAccounts(),
+    onRefreshOpenTabs: () => void refreshOpenTabs(),
+    onCloseAllOpenTabs: () => void closeAllOpenTabs(),
+    onDeleteAllAccounts: () => void deleteAllAccounts(),
+    onOpenDownloadDir: () => void openDownloadDir(),
+    onToggleSelectAll: () =>
+      setSelectedAccounts(
+        selectedAccounts.length === filteredAccounts.length && filteredAccounts.length > 0
+          ? []
+          : filteredAccounts.map((item) => item.id)
+      ),
+    onBatchAccounts: (action: Parameters<typeof batchAccounts>[0]) => void batchAccounts(action),
+    onBatchAssignGroup: () => void batchAssignGroup(),
+    onBatchProxy: () =>
+      selectedAccounts.length
+        ? (setBulkProxy({ ...emptyProxy }), setModal('bulkProxy'))
+        : setStatus('请先选择账号'),
+    onDeleteSelectedAccounts: () => void deleteSelectedAccounts(),
+    onSelectAccount: (accId: string, checked: boolean) =>
+      setSelectedAccounts(
+        checked ? [...selectedAccounts, accId] : selectedAccounts.filter((id) => id !== accId)
+      ),
+    onOpenAccount: (accId: string) => void openAccount(accId),
+    onEditAccount: editAccount,
+    onDeleteAccount: (acc: Account) => void deleteAccount(acc),
+    onExternalOpenAccount: (acc: Account) => void openExternalBrowser(acc),
+    onReorderAccount: (dragged: string, target: string, side: 'before' | 'after') =>
+      void reorderAccount(dragged, target, side),
+    onClearFilters: () => {
+      setSearch('');
+      setGroupFilter('');
+      setPlatformFilter('');
+    }
+  });
+
+  const workspaceHandlers = useStableHandlers({
+    onSelectTab: (id: string) => void selectTab(id),
+    onCloseTab: (id: string) => void closeTab(id),
+    onCloseOtherTabs: (id: string) => void closeOtherTabs(id),
+    onReorderOpenTabs: reorderOpenTabs,
+    onToggleTabOverview: () => setTabOverviewOpen((open) => !open),
+    onCloseTabOverview: () => setTabOverviewOpen(false),
+    onSetTabMenu: setTabMenu,
+    onSecondaryChange: (id: string | null) =>
+      void (async () => {
+        try {
+          if (id) await wakeTab(id);
+        } catch (error) {
+          report(error);
+          return;
+        }
+        setSecondaryId(id);
+        await window.workbench.browser.activate(activeId, id);
+      })(),
+    onClearDoubaoHistory: () => void clearDoubaoHistory(),
+    onNewAccount: newAccount,
+    onToggleResources: () =>
+      settings &&
+      void window.workbench.settings
+        .update({ resourcesCollapsed: !settings.resourcesCollapsed })
+        .then(unwrap)
+        .then(setSettings),
+    onOpenLibrary: () => setModal('library')
+  });
+
+  const mediaHandlers = useStableHandlers({
+    onSelect: setSelectedMedia,
+    onPreview: openPreview,
+    onDownload: (resource: MediaResource) => void download(resource),
+    onDownloadMany: (items: MediaResource[]) => void downloadManyResources(items, '素材'),
+    onCandidates: setCandidateResource,
+    onRefresh: (resource: MediaResource) => void refreshMediaResource(resource),
+    onOpenFolder: () => void openVideoDownloadDir(),
+    onLibrary: () => setModal('library'),
+    onCollapse: () =>
+      settings &&
+      void window.workbench.settings
+        .update({ resourcesCollapsed: true })
+        .then(unwrap)
+        .then(setSettings),
+    onClear: clearMediaList,
+    onStatus: setStatus
+  });
+
   return (
     <div className="app-shell">
       <AppHeader status={status} />
@@ -1368,7 +1519,7 @@ export function App(): React.JSX.Element {
         ref={workspaceRef}
         className={`workspace ${settings?.resourcesCollapsed ? 'resources-collapsed' : ''}`}
       >
-        <AccountsSidebar
+        <MemoAccountsSidebar
           accounts={accounts}
           filteredAccounts={filteredAccounts}
           groupedAccounts={groupedAccounts}
@@ -1385,80 +1536,14 @@ export function App(): React.JSX.Element {
           videoNoticeByAccount={videoNoticeByAccount}
           busy={busy}
           searchRef={searchRef}
-          onSearchChange={setSearch}
-          onGroupFilterChange={setGroupFilter}
-          onPlatformFilterChange={setPlatformFilter}
-          onToggleAccountTools={toggleAccountTools}
-          onToggleGroupCollapse={(groupName) =>
-            setCollapsedGroups((current) =>
-              current.includes(groupName)
-                ? current.filter((name) => name !== groupName)
-                : [...current, groupName]
-            )
-          }
-          onOpenSettings={() => setModal('settings')}
-          onNewAccount={newAccount}
-          onManageGroup={manageGroup}
-          onDeleteGroupAccounts={() => void deleteGroupAccounts()}
-          onDeletePlatformAccounts={() => void deletePlatformAccounts()}
-          onImportAccounts={() =>
-            window.workbench.accounts
-              .import()
-              .then(() => window.workbench.accounts.list())
-              .then(unwrap)
-              .then(setAccounts)
-              .catch(report)
-          }
-          onExportAccounts={() =>
-            window.workbench.accounts
-              .export()
-              .then(unwrap)
-              .then((x) => setStatus(`已导出：${x.path}`))
-              .catch(report)
-          }
-          onOpenFilteredAccounts={() => void openFilteredAccounts()}
-          onRefreshOpenTabs={() => void refreshOpenTabs()}
-          onCloseAllOpenTabs={() => void closeAllOpenTabs()}
-          onDeleteAllAccounts={() => void deleteAllAccounts()}
-          onOpenDownloadDir={() => void openDownloadDir()}
-          onToggleSelectAll={() =>
-            setSelectedAccounts(
-              selectedAccounts.length === filteredAccounts.length && filteredAccounts.length > 0
-                ? []
-                : filteredAccounts.map((item) => item.id)
-            )
-          }
-          onBatchAccounts={(action) => void batchAccounts(action)}
-          onBatchAssignGroup={() => void batchAssignGroup()}
-          onBatchProxy={() =>
-            selectedAccounts.length
-              ? (setBulkProxy({ ...emptyProxy }), setModal('bulkProxy'))
-              : setStatus('请先选择账号')
-          }
-          onDeleteSelectedAccounts={() => void deleteSelectedAccounts()}
-          onSelectAccount={(accId, checked) =>
-            setSelectedAccounts(
-              checked
-                ? [...selectedAccounts, accId]
-                : selectedAccounts.filter((id) => id !== accId)
-            )
-          }
-          onOpenAccount={(accId) => void openAccount(accId)}
-          onEditAccount={editAccount}
-          onDeleteAccount={(acc) => void deleteAccount(acc)}
-          onExternalOpenAccount={(acc) => void openExternalBrowser(acc)}
-          onReorderAccount={(dragged, target, side) => void reorderAccount(dragged, target, side)}
-          onClearFilters={() => {
-            setSearch('');
-            setGroupFilter('');
-            setPlatformFilter('');
-          }}
+          {...sidebarHandlers}
         />
 
-        <BrowserWorkspace
+        <MemoBrowserWorkspace
           accounts={accounts}
           platforms={platforms}
           openTabs={openTabs}
+          sleepingTabs={sleepingTabs}
           activeId={activeId}
           secondaryId={secondaryId}
           settings={settings}
@@ -1470,215 +1555,178 @@ export function App(): React.JSX.Element {
           primaryRef={primaryRef}
           secondaryRef={secondaryRef}
           accountName={accountName}
-          onSelectTab={(id) => void selectTab(id)}
-          onCloseTab={(id) => void closeTab(id)}
-          onCloseOtherTabs={(id) => void closeOtherTabs(id)}
-          onReorderOpenTabs={reorderOpenTabs}
-          onToggleTabOverview={() => setTabOverviewOpen((open) => !open)}
-          onCloseTabOverview={() => setTabOverviewOpen(false)}
-          onSetTabMenu={setTabMenu}
-          onSecondaryChange={(id) => {
-            setSecondaryId(id);
-            void window.workbench.browser.activate(activeId, id);
-          }}
-          onClearDoubaoHistory={() => void clearDoubaoHistory()}
-          onNewAccount={newAccount}
-          onToggleResources={() =>
-            settings &&
-            void window.workbench.settings
-              .update({ resourcesCollapsed: !settings.resourcesCollapsed })
-              .then(unwrap)
-              .then(setSettings)
-          }
-          onOpenLibrary={() => setModal('library')}
+          {...workspaceHandlers}
         />
 
-        <MediaPanel
-          resources={resources.filter(resource => {
-            const active = accounts.find(account => account.id === activeId);
-            if (!active || resource.accountId !== active.id) return false;
-            return !['doubao', 'dola'].includes(active.platform) || mediaBelongsToPage(resource, active.browser.lastUrl);
-          })}
+        <MemoMediaPanel
+          resources={activeResources}
           tasks={tasks}
           selected={selectedMedia}
           parseImages={settings?.parseImages ?? false}
           accountName={accountName}
-          onSelect={setSelectedMedia}
-          onPreview={openPreview}
-          onDownload={(resource) => void download(resource)}
-          onDownloadMany={(items) => void downloadManyResources(items, '素材')}
-          onCandidates={setCandidateResource}
-          onRefresh={(resource) => void refreshMediaResource(resource)}
-          onOpenFolder={() => void openVideoDownloadDir()}
-          onLibrary={() => setModal('library')}
-          onCollapse={() =>
-            settings &&
-            void window.workbench.settings
-              .update({ resourcesCollapsed: true })
-              .then(unwrap)
-              .then(setSettings)
-          }
-          onClear={clearMediaList}
-          onStatus={setStatus}
+          {...mediaHandlers}
         />
       </main>
 
-      {modal === 'account' && (
-        <AccountModal
-          editingId={editingId}
-          form={form}
-          platforms={platforms}
-          busy={busy}
-          runtimeState={runtimeState}
-          newAccountCount={newAccountCount}
-          startAfterCreate={startAfterCreate}
-          onFormChange={setForm}
-          onNewAccountCountChange={setNewAccountCount}
-          onStartAfterCreateChange={setStartAfterCreate}
-          onSave={() => void saveAccount()}
-          onClose={() => setModal(null)}
-          onImportSubscription={() => void importFormSubscription()}
-          onRefreshSubscription={() => void refreshFormSubscription()}
-          onSelectNode={(tag) => void selectFormNode(tag)}
-          onTestNode={(tag) => void testFormNode(tag)}
-          onTestAllNodes={() => void testAllFormNodes()}
-          onTestProxy={() => void testAccountProxy()}
-          onClearSession={(kind) => void clearAccountSession(kind)}
-          onRegenerateFingerprint={() => void regenerateFormFingerprint()}
-          onResetFingerprint={() => void resetFormFingerprint()}
-        />
-      )}
-
-      {modal === 'bulkProxy' && (
-        <BulkProxyModal
-          selectedCount={selectedAccounts.length}
-          bulkProxy={bulkProxy}
-          busy={busy}
-          onChange={setBulkProxy}
-          onApply={() => void applyBulkProxy()}
-          onClose={() => setModal(null)}
-        />
-      )}
-
-      {modal === 'settings' && settings && (
-        <Modal
-          title="工作台设置"
-          className="settings-modal"
-          onClose={() => setModal(null)}
-        >
-          <SettingsPanel
-            settings={settings}
+      <Suspense fallback={null}>
+        {modal === 'account' && (
+          <AccountModal
+            editingId={editingId}
+            form={form}
             platforms={platforms}
-            onChange={async (patch) =>
-              setSettings(unwrap(await window.workbench.settings.update(patch)))
-            }
-            onStatus={setStatus}
+            busy={busy}
+            runtimeState={runtimeState}
+            newAccountCount={newAccountCount}
+            startAfterCreate={startAfterCreate}
+            onFormChange={setForm}
+            onNewAccountCountChange={setNewAccountCount}
+            onStartAfterCreateChange={setStartAfterCreate}
+            onSave={() => void saveAccount()}
+            onClose={() => setModal(null)}
+            onImportSubscription={() => void importFormSubscription()}
+            onRefreshSubscription={() => void refreshFormSubscription()}
+            onSelectNode={(tag) => void selectFormNode(tag)}
+            onTestNode={(tag) => void testFormNode(tag)}
+            onTestAllNodes={() => void testAllFormNodes()}
+            onTestProxy={() => void testAccountProxy()}
+            onClearSession={(kind) => void clearAccountSession(kind)}
+            onRegenerateFingerprint={() => void regenerateFormFingerprint()}
+            onResetFingerprint={() => void resetFormFingerprint()}
           />
-        </Modal>
-      )}
+        )}
 
-      {modal === 'library' && (
-        <Modal title="下载素材库" wide onClose={() => setModal(null)}>
-          <LibraryModal
-            accounts={accounts}
-            platforms={platforms}
-            onStatus={setStatus}
+        {modal === 'bulkProxy' && (
+          <BulkProxyModal
+            selectedCount={selectedAccounts.length}
+            bulkProxy={bulkProxy}
+            busy={busy}
+            onChange={setBulkProxy}
+            onApply={() => void applyBulkProxy()}
+            onClose={() => setModal(null)}
           />
-        </Modal>
-      )}
+        )}
 
-      {modal === 'login' && activeId && (
-        <Modal
-          title={`登录辅助 · ${accountName(activeId)}`}
-          onClose={() => setModal(null)}
-        >
-          <LoginAssistModal accountId={activeId} onStatus={setStatus} />
-        </Modal>
-      )}
+        {modal === 'settings' && settings && (
+          <Modal
+            title="工作台设置"
+            className="settings-modal"
+            onClose={() => setModal(null)}
+          >
+            <SettingsPanel
+              settings={settings}
+              platforms={platforms}
+              onChange={async (patch) =>
+                setSettings(unwrap(await window.workbench.settings.update(patch)))
+              }
+              onStatus={setStatus}
+            />
+          </Modal>
+        )}
 
-      {modal === 'dola' && settings && (
-        <Modal title="Dola 批量登录" wide onClose={() => setModal(null)}>
-          <DolaBatchModal
-            accounts={accounts.filter((account) => account.platform === 'dola')}
-            initialAccountId={activeId ?? undefined}
-            dolaAspectRatio={settings.dolaAspectRatio}
-            onSettingsChange={async (patch) =>
-              setSettings(unwrap(await window.workbench.settings.update(patch)))
-            }
-            onAccountsChanged={async () => {
-              setAccounts(unwrap(await window.workbench.accounts.list()));
+        {modal === 'library' && (
+          <Modal title="下载素材库" wide onClose={() => setModal(null)}>
+            <LibraryModal
+              accounts={accounts}
+              platforms={platforms}
+              onStatus={setStatus}
+            />
+          </Modal>
+        )}
+
+        {modal === 'login' && activeId && (
+          <Modal
+            title={`登录辅助 · ${accountName(activeId)}`}
+            onClose={() => setModal(null)}
+          >
+            <LoginAssistModal accountId={activeId} onStatus={setStatus} />
+          </Modal>
+        )}
+
+        {modal === 'dola' && settings && (
+          <Modal title="Dola 批量登录" wide onClose={() => setModal(null)}>
+            <DolaBatchModal
+              accounts={accounts.filter((account) => account.platform === 'dola')}
+              initialAccountId={activeId ?? undefined}
+              dolaAspectRatio={settings.dolaAspectRatio}
+              onSettingsChange={async (patch) =>
+                setSettings(unwrap(await window.workbench.settings.update(patch)))
+              }
+              onAccountsChanged={async () => {
+                setAccounts(unwrap(await window.workbench.accounts.list()));
+              }}
+              onStatus={setStatus}
+            />
+          </Modal>
+        )}
+
+        {modal === 'higgsfield' && (
+          <Modal title="Higgsfield 批量登录" wide onClose={() => setModal(null)}>
+            <HiggsfieldBatchModal
+              accounts={accounts.filter((account) => account.platform === 'higgsfield')}
+              onAccountsChanged={async () => {
+                setAccounts(unwrap(await window.workbench.accounts.list()));
+              }}
+              onStatus={setStatus}
+            />
+          </Modal>
+        )}
+
+        {modal === 'faceGrid' && (
+          <Modal title="人脸网格工具" wide onClose={() => setModal(null)}>
+            <FaceGridPanel onStatus={setStatus} />
+          </Modal>
+        )}
+
+        {modal === 'migration' && (
+          <Modal title="V4.4 数据迁移" wide onClose={() => setModal(null)}>
+            <MigrationPanel
+              activeAccountId={activeId}
+              onImported={refreshAccountsAfterMigration}
+              onStatus={setStatus}
+            />
+          </Modal>
+        )}
+
+        {modal === 'diagnostics' && (
+          <Modal title="系统诊断" wide onClose={() => setModal(null)}>
+            <DiagnosticsPanel onStatus={setStatus} />
+          </Modal>
+        )}
+
+        {modal === 'help' && (
+          <Modal title="使用指南与快捷键" wide onClose={() => setModal(null)}>
+            <HelpPanel />
+          </Modal>
+        )}
+
+        {previewResource && (
+          <MediaPreviewModal
+            resource={previewResource}
+            convertedUrl={convertedPreviewUrl}
+            busy={conversionBusy}
+            onPrepare={() => void prepareResourcePreview(previewResource)}
+            onConvert={() => void convertPreview(previewResource)}
+            onRestore={() => setConvertedPreviewUrl(null)}
+            onDownload={(resource) => void download(resource)}
+            onOpenUrl={(resource) => void openResourceUrl(resource)}
+            onClose={() => {
+              setPreviewResource(null);
+              setConvertedPreviewUrl(null);
             }}
-            onStatus={setStatus}
           />
-        </Modal>
-      )}
+        )}
 
-      {modal === 'higgsfield' && (
-        <Modal title="Higgsfield 批量登录" wide onClose={() => setModal(null)}>
-          <HiggsfieldBatchModal
-            accounts={accounts.filter((account) => account.platform === 'higgsfield')}
-            onAccountsChanged={async () => {
-              setAccounts(unwrap(await window.workbench.accounts.list()));
-            }}
-            onStatus={setStatus}
+        {candidateResource && (
+          <CandidateModal
+            resource={candidateResource}
+            onSelectCandidate={(res, url) => void selectMediaCandidate(res, url)}
+            onCopyUrl={(url) => void copyCandidateUrl(url)}
+            onOpenUrl={(url) => void openCandidateUrl(url)}
+            onClose={() => setCandidateResource(null)}
           />
-        </Modal>
-      )}
+        )}
 
-      {modal === 'faceGrid' && (
-        <Modal title="人脸网格工具" wide onClose={() => setModal(null)}>
-          <FaceGridPanel onStatus={setStatus} />
-        </Modal>
-      )}
-
-      {modal === 'migration' && (
-        <Modal title="V4.4 数据迁移" wide onClose={() => setModal(null)}>
-          <MigrationPanel
-            activeAccountId={activeId}
-            onImported={refreshAccountsAfterMigration}
-            onStatus={setStatus}
-          />
-        </Modal>
-      )}
-
-      {modal === 'diagnostics' && (
-        <Modal title="系统诊断" wide onClose={() => setModal(null)}>
-          <DiagnosticsPanel onStatus={setStatus} />
-        </Modal>
-      )}
-
-      {modal === 'help' && (
-        <Modal title="使用指南与快捷键" wide onClose={() => setModal(null)}>
-          <HelpPanel />
-        </Modal>
-      )}
-
-      {previewResource && (
-        <MediaPreviewModal
-          resource={previewResource}
-          convertedUrl={convertedPreviewUrl}
-          busy={conversionBusy}
-          onPrepare={() => void prepareResourcePreview(previewResource)}
-          onConvert={() => void convertPreview(previewResource)}
-          onRestore={() => setConvertedPreviewUrl(null)}
-          onDownload={(resource) => void download(resource)}
-          onOpenUrl={(resource) => void openResourceUrl(resource)}
-          onClose={() => {
-            setPreviewResource(null);
-            setConvertedPreviewUrl(null);
-          }}
-        />
-      )}
-
-      {candidateResource && (
-        <CandidateModal
-          resource={candidateResource}
-          onSelectCandidate={(res, url) => void selectMediaCandidate(res, url)}
-          onCopyUrl={(url) => void copyCandidateUrl(url)}
-          onOpenUrl={(url) => void openCandidateUrl(url)}
-          onClose={() => setCandidateResource(null)}
-        />
-      )}
+      </Suspense>
 
       <ToastContainer
         toasts={toasts}

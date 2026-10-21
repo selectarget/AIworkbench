@@ -13,6 +13,8 @@ export interface BrowserWorkspaceProps {
   accounts: Account[];
   platforms: PlatformDefinition[];
   openTabs: string[];
+  /** Tabs whose page was released by idle sleep; selecting one reopens it. */
+  sleepingTabs?: string[];
   activeId: string | null;
   secondaryId: string | null;
   settings: AppSettings | null;
@@ -42,6 +44,7 @@ export function BrowserWorkspace({
   accounts,
   platforms,
   openTabs,
+  sleepingTabs = [],
   activeId,
   secondaryId,
   settings,
@@ -81,12 +84,13 @@ export function BrowserWorkspace({
         >
           {openTabs.map((id) => {
             const noticeCount = videoNoticeByAccount[id] ?? 0;
+            const sleeping = sleepingTabs.includes(id);
             return (
               <div
                 key={id}
                 className={`tab ${activeId === id ? 'active' : ''} ${
                   noticeCount ? 'has-video-notice' : ''
-                }`}
+                } ${sleeping ? 'sleeping' : ''}`}
                 draggable
                 onDragStart={(event) => {
                   event.dataTransfer.effectAllowed = 'move';
@@ -119,7 +123,7 @@ export function BrowserWorkspace({
                     onCloseTab(id);
                   }
                 }}
-                title={`${accountName(id)} (中键可直接关闭)`}
+                title={`${accountName(id)}${sleeping ? '（已休眠，点击唤醒）' : ''} (中键可直接关闭)`}
               >
                 <button
                   type="button"

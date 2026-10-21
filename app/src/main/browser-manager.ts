@@ -235,6 +235,8 @@ function isDolaCompletionUrl(rawUrl: string): boolean {
   } catch { return false; }
 }
 
+const SLEEP_CHECK_INTERVAL_MS = 60_000;
+
 export class BrowserManager {
   private readonly entries = new Map<string, Entry>();
   private readonly opening = new Map<string, OpeningTask>();
@@ -291,6 +293,31 @@ export class BrowserManager {
 
   constructor(private readonly window: BrowserWindow, private readonly accounts: AccountService, private readonly settings: SettingsService, private readonly proxy?: ProxyService, private readonly fingerprints: FingerprintService = new FingerprintService(accounts), private readonly plugins?: PluginService) {
     this.disposePluginListener = plugins?.onChange(() => { void this.syncCustomExtensions(); }) ?? null;
+    this.sleepTimer = setInterval(() => this.sleepIdleViews(), SLEEP_CHECK_INTERVAL_MS);
+    this.sleepTimer.unref?.();
+  }
+  /** Return true while an account must stay loaded (for example, a download that needs its page). */
+  setSleepGuard(guard: ((accountId: string) => boolean) | null): void { this.sleepGuard = guard; }
+  /** Records page activity so a background account is not put to sleep while it is still producing results. */
+  markActivity(accountId: string): void { if (this.entries.has(accountId)) this.lastUsed.set(accountId, Date.now()); }
+  // Background accounts that nobody has looked at for the configured time are
+  // closed to free their renderer, extensions and proxy runtime. The renderer
+  // keeps the tab and reopens the account when it is selected again.
+  private sleepIdleViews(): void {
+    const minutes = this.settings.get().idleSleepMinutes;
+    if (!minutes) return;
+    if (this.batchWindow && !this.batchWindow.isDestroyed()) return;
+    const cutoff = Date.now() - minutes * 60_000;
+    for (const [accountId, entry] of [...this.entries]) {
+      if (accountId === this.primaryId || accountId === this.secondaryId) { this.lastUsed.set(accountId, Date.now()); continue; }
+      if (this.opening.has(accountId) || (this.lastUsed.get(accountId) ?? Date.now()) > cutoff) continue;
+      const contents = entry.view.webContents;
+      if (contents.isDestroyed() || contents.isCurrentlyAudible() || this.sleepGuard?.(accountId)) continue;
+      this.close(accountId);
+      this.lastUsed.delete(accountId);
+      this.resolverDiagnosticSink?.(`[tab-sleep] account=${accountId} idleMinutes=${minutes}`);
+      try { if (!this.window.isDestroyed()) this.window.webContents.send(channels.browserSlept, { accountId }); } catch { /* the main window may be closing */ }
+    }
   }
   setMediaSink(sink: (accountId: string, resource: unknown) => void): void { this.mediaSink = sink; }
   acceptsMediaCapture(accountId: string, source?: string): boolean {
@@ -313,12 +340,16 @@ export class BrowserManager {
     return { ...value, capturePageUrl: value.capturePageUrl || this.entries.get(accountId)?.view.webContents.getURL() };
   }
   setResolverDiagnosticSink(sink: (message: string) => void): void { this.resolverDiagnosticSink = sink; }
+  private readonly lastUsed = new Map<string, number>();
+  private sleepTimer: NodeJS.Timeout | null = null;
+  private sleepGuard: ((accountId: string) => boolean) | null = null;
   setNetworkDiagnosticSink(sink: (level: 'info' | 'warn', message: string) => void): void { this.networkDiagnosticSink = sink; }
   setSiteDownloadSink(sink: (accountId: string, resource: unknown) => void): void { this.siteDownloadSink = sink; }
   setNativeDownloadSink(sink: (notice: NativeDownloadNotice) => void): void { this.nativeDownloadSink = sink; }
   setNativeDownloadPathResolver(resolvePath: (accountId: string, filename: string) => string, releasePath?: (path: string) => void): void { this.nativeDownloadPathResolver = resolvePath; this.nativeDownloadPathRelease = releasePath ?? null; }
   markProgrammaticDownload(accountId: string, url: string): void { this.programmaticDownloadGuard.mark(accountId, url); }
   dispose(): void {
+    if (this.sleepTimer) { clearInterval(this.sleepTimer); this.sleepTimer = null; }
     const batch = this.batchWindow;
     if (batch) {
       this.restoreBatchWorkspace(batch);
@@ -363,6 +394,7 @@ export class BrowserManager {
     this.opening.set(accountId, state);
     try {
       await task;
+      this.lastUsed.set(accountId, Date.now());
     } finally {
       if (this.opening.get(accountId) === state) this.opening.delete(accountId);
     }
@@ -402,13 +434,14 @@ export class BrowserManager {
     const rememberLocation = (): void => {
       const currentUrl = view.webContents.getURL();
       if (!/^https?:\/\//i.test(currentUrl)) return;
+      this.markActivity(accountId);
       try { this.window.webContents.send(channels.browserNavigationUpdated, { accountId, url: currentUrl }); } catch { /* the main window may be closing */ }
       const timer = this.locationTimers.get(accountId); if (timer) clearTimeout(timer);
       this.locationTimers.set(accountId, setTimeout(() => {
         this.locationTimers.delete(accountId);
         try {
           const current = this.account(accountId);
-          if (current.browser.lastUrl !== currentUrl) this.accounts.update(accountId, { browser: { ...current.browser, lastUrl: currentUrl } });
+          if (current.browser.lastUrl !== currentUrl) this.accounts.setLastUrl(accountId, currentUrl);
         } catch { /* The account may have been removed while navigation was finishing. */ }
       }, 500));
     };
@@ -443,25 +476,34 @@ export class BrowserManager {
   }
 
   private async initializeView(account: Account, ses: Electron.Session, view: WebContentsView): Promise<void> {
+    const started = Date.now(); let mark = started; const phases: string[] = [];
+    const lap = (name: string): void => { const now = Date.now(); phases.push(`${name}=${now - mark}ms`); mark = now; };
     await withTimeout(this.loadExtensions(account, ses), 15000, '扩展初始化超时').catch(() => undefined);
+    lap('extensions');
     // A close/reopen sequence can leave the previous sing-box stop request
     // in flight. Wait for that exact request before binding this Session to a
     // new local port; otherwise the old stop can terminate the newly-started
     // runtime for the same account.
     await this.runtimeStops.get(account.id);
     await withTimeout(this.applyProxy(account.id), 12000, '代理初始化超时');
+    lap('proxy');
     // Electron 43 may leave a newly-created WebContentsView without a live
     // renderer target. Establish a harmless blank document first so the CDP
     // Page domain can register fingerprint and adapter scripts before the
     // actual site navigation. The blank page is never exposed by the layout.
     await withTimeout(view.webContents.loadURL('about:blank'), 5000, '浏览器 renderer 初始化超时');
+    lap('renderer');
     // Zoom is persisted per account. Apply it before the real page is
     // navigated so a reopened account does not briefly use the default scale
     // and so the setting remains independent across WebContentsViews.
     const zoomFactor = Math.max(0.25, Math.min(5, account.browser.zoomFactor));
     if (!view.webContents.isDestroyed()) view.webContents.setZoomFactor(zoomFactor);
     await withTimeout(this.setupDebugger(account, view), 5000, '调试器初始化超时').catch(() => undefined);
-    if (!view.webContents.isDestroyed()) void view.webContents.loadURL(this.url(account)).catch(() => { /* did-fail-load owns retry */ });
+    lap('debugger');
+    this.resolverDiagnosticSink?.(`[startup-timing] account=${account.id} open ${phases.join(' ')} total=${Date.now() - started}ms`);
+    if (view.webContents.isDestroyed()) return;
+    view.webContents.once('did-finish-load', () => this.resolverDiagnosticSink?.(`[startup-timing] account=${account.id} site-loaded=${Date.now() - started}ms`));
+    void view.webContents.loadURL(this.url(account)).catch(() => { /* did-fail-load owns retry */ });
   }
 
   close(accountId: string): void {
@@ -886,7 +928,7 @@ export class BrowserManager {
     });
   }
   refreshMany(ids: string[]): void { [...new Set(ids)].forEach((id) => this.refresh(id)); }
-  activate(primaryId: string | null, secondaryId: string | null = null): void { this.primaryId = primaryId; this.secondaryId = secondaryId; this.applyLayout(); }
+  activate(primaryId: string | null, secondaryId: string | null = null): void { for (const id of [this.primaryId, this.secondaryId, primaryId, secondaryId]) if (id) this.markActivity(id); this.primaryId = primaryId; this.secondaryId = secondaryId; this.applyLayout(); }
   setLayout(layout: ViewLayout): void { this.layout = layout; this.applyLayout(); }
   private rect(value: Rectangle): Rectangle { return { x: Math.round(value.x), y: Math.round(value.y), width: Math.max(0, Math.round(value.width)), height: Math.max(0, Math.round(value.height)) }; }
   private applyLayout(): void {

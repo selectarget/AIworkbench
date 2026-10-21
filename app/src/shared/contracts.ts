@@ -235,6 +235,7 @@ export const settingsSchema = z.object({
   downloadConcurrency: z.coerce.number().int().min(1).max(6).default(2),
   downloadRetryCount: z.coerce.number().int().min(0).max(5).default(2),
   maxOpenAccounts: z.coerce.number().int().min(2).max(100).default(20),
+  idleSleepMinutes: z.coerce.number().int().min(0).max(1440).default(30),
   experimentalResponsePatchEnabled: z.boolean().default(true),
   disabledAdapters: z.array(platformIdSchema).default([]),
   openTabs: z.array(z.string()).default([]),
@@ -525,6 +526,7 @@ export interface WorkbenchApi {
     resolveDolaResource(accountId: string, reference: DolaResourceReference, downloadAfterResolve?: boolean): Promise<ApiResult<void>>;
     navigate(accountId: string, url: string): Promise<ApiResult<void>>;
     onNavigation(listener: (state: BrowserNavigationState) => void): () => void;
+    onSlept(listener: (state: { accountId: string }) => void): () => void;
     activate(primaryId: string | null, secondaryId?: string | null): Promise<ApiResult<void>>;
     setLayout(layout: ViewLayout): Promise<ApiResult<void>>;
     applyProxy(accountId: string): Promise<ApiResult<void>>;

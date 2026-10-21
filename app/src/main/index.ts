@@ -36,6 +36,9 @@ const profileLocation = new ProfileLocationService(dataOptions);
 const paths = resolveDataPaths(dataOptions, profileLocation.get().path);
 protocol.registerSchemesAsPrivileged([{ scheme: 'workbench-media', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }]);
 const logger = new Logger(paths.logs);
+process.once('exit', () => logger.flushSync());
+// Milliseconds since the process started, for the [startup-timing] log lines.
+const uptimeMs = (): number => Math.round(process.uptime() * 1000);
 const networkFailures = new NetworkFailureReporter((level, message) => logger[level](message));
 app.once('will-quit', () => networkFailures.dispose());
 setMediaRequestLogger((message) => logger.info(message));
@@ -146,6 +149,12 @@ function getPersistentServices(): PersistentServices {
   return persistentServices;
 }
 
+function flushPersistentState(): void {
+  try { persistentServices?.accounts.flush(); } catch (error) { logger.warn(`账号位置保存失败：${error instanceof Error ? error.message : String(error)}`); }
+  try { persistentServices?.media.flush(); } catch (error) { logger.warn(`下载任务保存失败：${error instanceof Error ? error.message : String(error)}`); }
+  logger.flushSync();
+}
+
 async function createWindow(): Promise<BrowserWindow> {
   await runtimeTeardown;
   const window = new BrowserWindow({
@@ -155,6 +164,7 @@ async function createWindow(): Promise<BrowserWindow> {
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   window.webContents.on('console-message', ({ level, message, lineNumber, sourceId }) => {
+    if (level === 'debug') return;
     logger.info(`[renderer:${level}] ${message} (${sourceId}:${lineNumber})`);
   });
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -163,7 +173,9 @@ async function createWindow(): Promise<BrowserWindow> {
   window.webContents.on('render-process-gone', (_event, details) => {
     logger.error(`[renderer:gone] reason=${details.reason} exitCode=${details.exitCode}`);
   });
+  logger.info(`[startup-timing] window-created=${uptimeMs()}ms`);
   const services = getPersistentServices();
+  logger.info(`[startup-timing] services-ready=${uptimeMs()}ms`);
   const { accounts, settings, proxy, fingerprints, plugins, media, updates, externalLogin, cacheCleaner, backups } = services;
   const syncWindowTheme = (theme: 'light' | 'dark'): void => {
     window.setBackgroundColor(theme === 'light' ? '#f3f4f7' : '#30343c');
@@ -194,8 +206,9 @@ async function createWindow(): Promise<BrowserWindow> {
     mediaProtocolInstalled = true;
   }
   activeMedia = media;
-  browser.setMediaSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, browser.scopeCapturedMedia(accountId, resource)); if (added) void media.materializeBlobPreview(added.id).catch(() => undefined); });
-  browser.setSiteDownloadSink((accountId, resource) => { if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, browser.scopeCapturedMedia(accountId, resource)); if (added) { media.enqueue(added.id); void media.materializeBlobPreview(added.id).catch(() => undefined); } });
+  browser.setSleepGuard((accountId) => media.tasks().some((task) => task.accountId === accountId && (task.status === 'running' || task.status === 'queued')));
+  browser.setMediaSink((accountId, resource) => { browser.markActivity(accountId); if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, browser.scopeCapturedMedia(accountId, resource)); if (added) void media.materializeBlobPreview(added.id).catch(() => undefined); });
+  browser.setSiteDownloadSink((accountId, resource) => { browser.markActivity(accountId); if (!captureModeAccepts((settings.get().parseImages ? 'all' : 'video'), resource)) return; const added = media.add(accountId, browser.scopeCapturedMedia(accountId, resource)); if (added) { media.enqueue(added.id); void media.materializeBlobPreview(added.id).catch(() => undefined); } });
   browser.setNativeDownloadSink((notice) => { if (!window.isDestroyed()) window.webContents.send(channels.filesDownloaded, notice); });
   browser.setNativeDownloadPathResolver((accountId, filename) => media.reserveNativeDownloadPath(accountId, filename), (path) => media.releaseReservedDownloadPath(path));
   const migration = new LegacyMigrationService(window, accounts, join(paths.config, 'accounts.json'), (accountId, bundle) => browser.importStorage(accountId, bundle), settings);
@@ -216,11 +229,13 @@ async function createWindow(): Promise<BrowserWindow> {
     // On macOS the process remains alive after the window closes. Keep this
     // promise visible to a later explicit app quit so child processes cannot
     // outlive the last BrowserWindow.
+    flushPersistentState();
     if (!shutdownStarted) queueProxyShutdown(proxy);
     if (activeRuntime?.browser === browser) activeRuntime = null;
   });
   if (process.env.ELECTRON_RENDERER_URL) await window.loadURL(process.env.ELECTRON_RENDERER_URL);
   else await window.loadFile(join(__dirname, '../renderer/index.html'));
+  logger.info(`[startup-timing] ui-loaded=${uptimeMs()}ms`);
   return window;
 }
 
@@ -250,6 +265,7 @@ function installAppLifecycle(): void {
     event.preventDefault();
     shutdownStarted = true;
     const runtime = activeRuntime;
+    flushPersistentState();
     const externalLoginTeardown = runtime?.externalLogin.closeAll() ?? Promise.resolve();
     runtime?.browser.dispose();
     runtime?.disposeIpc();
@@ -267,6 +283,7 @@ function installAppLifecycle(): void {
 }
 
 app.whenReady().then(async () => {
+  logger.info(`[startup-timing] app-ready=${uptimeMs()}ms`);
   installAppLifecycle();
   const window = await createWindow();
   mainWindow = window;
