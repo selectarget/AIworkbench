@@ -29,6 +29,17 @@
 
 带专用适配器的平台：豆包、千问、Dola、云雀、Higgsfield、即梦；其余平台使用通用浏览器容器和通用媒体捕获。
 
+## 截图
+
+截图来自本机 Windows 构建，macOS 使用相同的界面布局。
+
+| | |
+|:---:|:---:|
+| ![工作台主界面](docs/screenshots/workbench-main.png)<br>账号空间、标签页与右侧素材队列 | ![图片素材预览](docs/screenshots/material-preview-image.png)<br>素材大图预览与下载入口 |
+| ![视频素材预览](docs/screenshots/material-preview-video.png)<br>视频预览与原始地址解析 | ![账号编辑](docs/screenshots/account-editor.png)<br>账号独立 Session、代理与浏览器页面 |
+| ![账号指纹](docs/screenshots/account-fingerprint.png)<br>账号级稳定指纹与平台参数适配 | ![下载设置](docs/screenshots/download-settings.png)<br>下载目录、命名规则与分平台归档 |
+| ![插件设置](docs/screenshots/plugin-settings.png)<br>Chrome 扩展（CRX/ZIP）导入 | |
+
 ## 技术栈
 
 - Electron 43 + React 19 + TypeScript 5.9
