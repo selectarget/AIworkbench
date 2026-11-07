@@ -1,68 +1,54 @@
-# AI 创作工作台跨平台开发基线
+# AI 创作工作台 · 应用工程
 
-> 当前校准（2026-08-28）：源码回归为 36 个测试文件、267/267 项通过；Windows x64 portable 已重新封装，大小 195,931,887 字节，SHA-256 为 `C825BA3EB3DA72B561B2368555272CBEBF506A4BF0FA8FECC24E4C8D0832D86F`，并通过包审计、原生资源校验和 6 秒启动 smoke；GUI smoke 还确认 Dola 批量登录弹窗无横向溢出，Dola 页面桥的编码媒体地址已进入统一媒体消息链路，发布配置回归确认 macOS x64/arm64 签名发布步骤完整。
+这是 AI 创作工作台的 Electron 工程目录。项目概览、功能、架构、数据目录和发布流程请先阅读仓库根目录的 [`../README.md`](../README.md)。
 
-> 本轮界面与下载对齐回归：36 个测试文件、273/273 项通过；另有 1080/1440 GUI smoke 和原生 WebContentsView 遮挡 smoke。
-
-这是 Electron + React + TypeScript 的跨平台重建工程，目标平台为 Windows x64、macOS Intel 和 macOS Apple Silicon。终端用户不需要安装 .NET；Electron 会携带 Chromium 和 Node.js 运行时。应用级卡密、激活码、机器绑定和到期校验不属于本工程的启动链路；账号登录仍由各目标网站自己的登录流程处理。
-
-完整的技术架构、数据隔离、V4.4 对照和迁移路线请先阅读：[`../ARCHITECTURE.md`](../ARCHITECTURE.md)。
-
-## 豆包历史会话清理
-
-打开已登录的豆包账号后，地址栏右侧的“一键清理”会进入平台历史管理页、开启批量删除并选择全部会话（包含尚未加载的会话）。工作台显示当前账号名称和平台实际选中数量，确认后才执行删除；会话及关联线上作品一起清理，已下载到电脑的文件保留。此操作清理全部历史会话，暂不支持按日期筛选。
-
-使用 Electron 原生鼠标输入操作平台控件；进入批量模式后先勾选已加载会话，再选择账号的全部会话。页面结构变化、数量不一致或确认期间页面切换时会停止；平台没有确认删除结果时不会自动重试，请在豆包页面核对。失败原因会弹窗显示，并以 `[doubao-history]` 写入 `logs/workbench.log`，包括导航、选择、确认和结果阶段。
-
-提交后只刷新一次历史页，通过批量栏的全账号剩余数量核验结果，不单凭成功或失败提示判断。普通会话清空但主对话被平台保留时，明确说明其不支持批量删除；已有零个可清理会话时直接报告已清空，不再确认或提交删除。日志分别保留 `page-result` 和最终 `result`，核验不会自动重试删除。
-
-`npm run smoke:doubao-history` 用真实 WebContentsView 加载本地样本覆盖这些情况，不读取或删除真实账号数据。真实登录页已验证全量选择准备流程和清理后的只读数量核验；独立作品是否同时移除仍需在平台作品页核验。开发命令开启主进程与 preload 文件监听，避免界面更新后主进程仍运行旧代码。
-
-## 开发与验证
+## 快速开始
 
 ```bash
 npm ci
 npm run dev
+```
+
+要求 Node.js 22 LTS 和 Git LFS。`sing-box/`、`media-tools/` 中的原生二进制通过 LFS 存储，克隆后确认已执行 `git lfs install`。
+
+## 目录
+
+- `src/main/`：主进程（账号、浏览器、代理、媒体、下载、插件、更新）
+- `src/preload/`：沙箱 preload
+- `src/renderer/`：React 界面
+- `src/shared/`：Zod schema、IPC 通道、平台定义
+- `scripts/`：打包、资源校验、冒烟测试
+- `tests/`：Vitest 测试
+- `sing-box/`、`media-tools/`、`face-grid-assets/`：运行时原生资源
+
+## 验证与打包
+
+```bash
 npm run typecheck
 npm test
 npm run build
+npm run smoke:all
 ```
 
-Windows x64 目录包和便携包：
+Windows：
 
 ```bash
 npm run pack:win
-npm run audit:package -- release/win-unpacked
 npm run dist:win
+npm run smoke:portable
 ```
 
-macOS 必须在 macOS 主机上分别构建 x64 与 arm64：
+macOS：
 
 ```bash
 npm run pack:mac
-npm run dist:mac
+npm run dist:mac:unsigned
+npm run verify:mac-release -- <app路径> <x64|arm64> --dmg <dmg路径>
 ```
 
-正式签名/公证发布可手动触发 `.github/workflows/release-macos.yml`。仓库需要配置 `MACOS_CERTIFICATE_P12_BASE64`、`MACOS_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`；工作流会按 x64/arm64 分别构建、签名、公证、审计、启动验证并可发布到 GitHub Release。没有这些密钥时仍可使用 `build-macos.yml` 生成未签名验收包。
+## 说明
 
-CI 或本地只需要验证未签名 DMG 时可执行 `npm run dist:mac:unsigned`；它不会伪造签名，也不要求发布仓库配置。生成 `.app` 和 DMG 后，可在 macOS 上用 `npm run verify:mac-release -- <app路径> <x64|arm64> --dmg <dmg路径>` 检查 Bundle、Info.plist、图标、主程序执行权限、原生核心/FFmpeg 架构与 SHA-256；正式签名发布可追加 `--signed`，再使用 `npm run dist:mac` 配置签名、公证和公开更新所需环境。
-
-启用订阅代理前，工程已随附官方 sing-box v1.13.19 的 Windows x64、macOS Intel 和 macOS Apple Silicon 核心，分别位于 `sing-box/win32-x64/`、`sing-box/darwin-x64/` 和 `sing-box/darwin-arm64/`；`native-resources.json` 固定来源与 SHA-256，发布脚本会继续检查文件、架构目录、大小和 macOS 可执行权限。正式发布前仍需在对应平台验证签名、公证和运行时行为。
-
-视频兼容预览所需的 FFmpeg 也随工程提供 Windows x64、macOS Intel 和 macOS Apple Silicon 版本；`scripts/prepare-media-resources.mjs` 会固定版本、校验 SHA-256 和目标架构，缺失时自动补齐。发布物需保留 `media-tools/licenses/ffmpeg-gpl.txt` 及对应再分发说明。
-
-`pack:*` 用于开发目录包，但也会校验所选平台的 sing-box 核心；`dist:*` 是发布流程，会额外检查发布环境。macOS 签名、公证、权限弹窗和真实站点冒烟测试必须在对应 Mac 环境完成。
-
-需要在已有人工登录态上做真实站点验收时，可显式指定工作台的 Session 根目录和账号 ID。该 smoke 不接收或保存密码，不复制 Cookie，也不会自动处理验证码、2FA 或 Passkey；省略 `--user-data` 时只使用临时 Session：
-
-```bash
-npm run smoke:real-sites -- --platform dola --account-id <账号ID> --user-data <Electron Session根目录> --show
-```
-
-`--expect-capture` 可要求等待期间至少捕获一条媒体消息，`--require-auth` 只提供启发式登录门控检查。真实站点 smoke 不会替代人工完成第三方登录、任务提交和下载验收。
-
-如只想检查公开入口、适配器注入和临时 Session，可运行 `npm run smoke:real-sites:public`。它会依次检查 10 个公开平台页面，不读取真实登录目录，也不接收密码；该命令是外部网络验收，不纳入默认 `smoke:all`。
-
-如果本机保留旧版 V4.4 配置，可运行 `npm run smoke:legacy-config -- --source "C:\\Users\\<用户名>\\AppData\\Local\\DolaMultiBrowser\\config.json"` 做只读迁移预览验收；追加 `--sandbox-import` 会把导入目标放到临时目录和内存服务中，验证实际 schema 导入与备份生成，但仍不改写原配置/账号目录。命令只输出账号/平台/指纹/代理和旧设置的计数，不复制 WebView2 数据库，也不输出 Cookie 或密码。
-
-数据使用 Electron 的用户数据目录和应用配置目录，账号会话按 `persist:account_<id>` 隔离。Windows 便携包默认将 `data/` 放在程序目录旁；macOS 放在用户的 `~/Library/Application Support/AI创作工作台/data/`，不会写入 `.app` 包。Cookie/LocalStorage/SessionStorage 可通过迁移向导导入；结构化导出文件中的 IndexedDB 会按 schema、记录和索引恢复。WebView2 加密数据库、未导出的 Service Worker 状态和站点私有缓存仍需要重新登录或重新生成。
+- 数据隔离使用 `persist:account_<id>` Session；账号配置、代理密码、下载任务都由主进程管理。
+- 真实站点登录、生成和下载需要在对应环境用自有账号人工验收。
+- 发布工作流见 `.github/workflows/release.yml`（Windows + macOS 自动发布）和 `release-macos.yml`（签名/公证发布）。
+- 旧版 API 表面审计依赖本地 `reference-original/`，该目录不进入仓库；缺失时脚本会明确跳过。

@@ -1,6 +1,6 @@
 {
   "name": "ai-creation-workbench",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "AI创作工作台 - 多账号隔离与素材管理",
   "author": "AI创作工作台",
@@ -29,7 +29,7 @@
     "smoke:legacy-config": "npm run build && node node_modules/electron/cli.js scripts/smoke-legacy-config.mjs --",
     "smoke:all": "node scripts/smoke-all.mjs",
     "smoke:packaged": "node scripts/smoke-packaged.mjs",
-    "smoke:portable": "node scripts/smoke-packaged.mjs release/AI创作工作台-1.0.1-win-x64-portable.exe win32 x64 6",
+    "smoke:portable": "node scripts/smoke-portable.mjs",
     "audit:package": "node scripts/audit-package.mjs",
     "smoke:face-grid": "npm run build && node node_modules/electron/cli.js scripts/smoke-face-grid.mjs",
     "smoke:batch-workspace": "npm run build && node node_modules/electron/cli.js scripts/smoke-batch-workspace.mjs",

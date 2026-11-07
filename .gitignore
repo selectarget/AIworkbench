@@ -35,3 +35,6 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Interrupted electron-builder output
+app/release-verify/

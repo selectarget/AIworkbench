@@ -20,11 +20,16 @@ type SignedUpdateManifest = {
 function versionParts(value: string): number[] { return value.replace(/^v/i, '').split('.').map((part) => Number.parseInt(part, 10) || 0); }
 function newer(a: string, b: string): boolean { const left = versionParts(a), right = versionParts(b); for (let i = 0; i < 4; i++) { if ((left[i] ?? 0) !== (right[i] ?? 0)) return (left[i] ?? 0) > (right[i] ?? 0); } return false; }
 
+// Packaged builds do not inherit a shell environment, so the release repository
+// has to be part of the build. The environment variable stays as an override for
+// development and for forks that publish their own builds.
+const DEFAULT_RELEASE_REPO = 'selectarget/AIworkbench';
+
 export class UpdateService {
   private release: Release | null = null;
   constructor(private readonly updateDir: string, private readonly target: UpdateTarget | null = resolveUpdateTarget(process.platform, process.arch)) {}
   async check(): Promise<UpdateInfo> {
-    const repo = process.env.GITHUB_RELEASE_REPO?.trim(); const currentVersion = app.getVersion();
+    const repo = process.env.GITHUB_RELEASE_REPO?.trim() || DEFAULT_RELEASE_REPO; const currentVersion = app.getVersion();
     if (!this.target) return { enabled: false, hasUpdate: false, currentVersion, reason: '当前平台没有可用的更新包' };
     if (!repo) return { enabled: false, hasUpdate: false, currentVersion, target: this.target };
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('GITHUB_RELEASE_REPO 格式必须为 owner/repo');

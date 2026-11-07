@@ -9,6 +9,8 @@ on:
         default: true
         type: boolean
   push:
+    branches:
+      - main
     paths:
       - "app/**"
       - ".github/workflows/build-macos.yml"
@@ -20,7 +22,7 @@ concurrency:
 jobs:
   package:
     name: Build macOS x64 and arm64 directory packages
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     defaults:
       run:

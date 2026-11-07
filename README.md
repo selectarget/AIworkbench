@@ -1,48 +1,180 @@
-# AI 创作工作台：Mac 重建源码
+# AI 创作工作台
 
-本目录是从 `D:\GitProject\test` 和 `D:\GitProject\test\analysis` 整理出的独立副本。功能对照已切到 **V6.8**（2026-10-02），差量见 [`V68_DELTA.md`](V68_DELTA.md)（历史 V5.2 差量见 [`V52_DELTA.md`](V52_DELTA.md)）；反编译材料在 `reference/v68/` 和 `reference/v52/`，不进入构建。原始 EXE、分析目录和现有工程均未修改。
+跨平台的多账号 AI 创作工作台：把多个第三方 AI 站点的账号、浏览器会话、代理、指纹和素材下载集中到一个桌面应用里管理。
 
-## 当前迁移状态
+[![Release](https://github.com/selectarget/AIworkbench/actions/workflows/release.yml/badge.svg)](https://github.com/selectarget/AIworkbench/actions/workflows/release.yml)
 
-这是可运行的 Electron 跨平台重建基线，不应标记为“原软件全部功能已经 1:1 验收完成”。当前 Windows x64 的本地工程、账号隔离、代理运行时、迁移导入、素材队列和 GUI 已有自动化证据；macOS 真机打包/签名/启动，以及真实账号登录和站点版本兼容仍需在对应环境验收。逐项结论见 [`FUNCTION_MATRIX.md`](FUNCTION_MATRIX.md)。
+- Windows x64：单文件便携版（portable `.exe`）
+- macOS Intel（x64）与 Apple Silicon（arm64）：独立 DMG
+- 不需要安装 .NET / Node.js，Electron 自带 Chromium 与 Node 运行时
 
-最近一次本机回归基线：36 个测试文件、267 个单元/集成测试通过；新增覆盖 Dola 备用解析按账号 Session 使用平台匹配的 User-Agent（并去除 Electron 标识）、紧凑 SSE、NDJSON、有界嵌套 JSON 响应中的媒体资源解析、素材候选地址标注/选择，以及 HTTP 200 错误页和流中断后的候选回退/失败记录。插件导入回归还覆盖 CRX2/CRX3 头部剥离后加载 Manifest V3；远程媒体、视频提醒和 Dola 令牌三条事件链现在统一尊重平台适配器禁用设置。下载队列还会登记程序化下载 URL，并在旧版兼容窗口内取消同 URL 的重复 Chromium 原生下载；已打开的素材库会在普通文件或媒体任务完成后自动防抖刷新。通用捕获还覆盖响应式 `srcset`、`<picture><source>`、受限 CSS 背景图和媒体类型优先级；sandboxed remote preload 也有独立兜底 smoke，验证页面脚本缺席时仍能安全捕获可见图片、响应式来源、CSS 背景和 `<video><source>`，并拒绝空地址回退为当前页面 URL；GUI 预览验证了普通文件下载完成通知、候选地址详情弹窗、失败候选状态，以及账号卡片/标签页“新视频”提醒，并补回旧 V4.4 的固定 HTTPS“作者店铺”入口。旧版 API 表面审计 59 项（44 项已映射、12 项内部实现、3 项明确移除）；外部登录新增平台无关的目标站点 Cookie 登录态轮询，Dola/Higgsfield 在人工完成验证码、2FA 或 Passkey 后可自动检测并同步；旧版代理订阅转换新增 VMess WebSocket/gRPC/HTTP-H2、TLS SNI/证书校验/ALPN/客户端指纹，以及 hysteria2 带宽和混淆参数保留；同时限制订阅大小并拒绝不严格的 Base64 输入。媒体资源入口（包括 Dola 页面桥）现在还共享安全 URL 归一化，兼容旧版 JSON/HTML 中的转义斜杠、Unicode 转义、外层引号和 HTML 实体，并在主进程去重与下载前统一校验协议。Windows x64 目录包和 portable 包已完成本机启动与原生资源审计；portable 最新大小为 195,931,887 字节，SHA-256 为 `C825BA3EB3DA72B561B2368555272CBEBF506A4BF0FA8FECC24E4C8D0832D86F`。10 个真实公开平台入口也已在 Electron `WebContentsView` 中逐一通过公开页面导航/适配器注入检查，但不代表真实登录、任务、下载权限或 macOS 已完成。
+## 功能
 
-本轮界面与下载对齐回归：36 个测试文件、273/273 项通过；另有 1080/1440 GUI smoke 和原生 WebContentsView 遮挡 smoke。
+| 模块 | 说明 |
+| --- | --- |
+| 多账号隔离 | 每个账号使用独立的 `persist:account_<id>` Electron 会话，Cookie、LocalStorage、IndexedDB、缓存互不干扰；支持分组、批量创建、排序和批量改代理 |
+| 内置浏览器 | `WebContentsView` 承载站点页面，支持多标签、双栏视图、缩放、静音休眠、Boss Key 隐藏/唤起 |
+| 素材捕获 | 从页面网络响应、DOM、`srcset`、CSS 背景、`blob:` 地址中识别图片和视频，按账号作用域过滤，可切换仅图片/仅视频/全部 |
+| 下载队列 | 并发数、重试次数、断点续传、限速冷却、候选地址回退、账号独立目录、文件名模板、旧版目录兼容 |
+| 视频预览 | 打包 FFmpeg 将无法直接预览的格式转码为本地缓存预览，原片保持不变 |
+| 代理 | 内置 sing-box 运行时；支持直连代理和订阅导入（VMess/VLESS/Trojan/Shadowsocks/Hysteria2 等），节点测速、延迟/出口 IP 检测、按账号绑定 |
+| 浏览器指纹 | UA、UA-CH、WebGL、Canvas/Audio 噪声、时区、屏幕参数、WebRTC 策略；按账号持久化并可在 Windows/macOS 间适配 |
+| 平台自动化 | 豆包历史会话一键清理、Dola 批量登录/参考图上传/视频提交、即梦原始视频、Higgsfield 批量流程 |
+| 工具 | 人脸网格裁剪（OpenCV DNN）、旧版配置迁移、Session 导入、插件（CRX2/CRX3）、诊断导出、日志查看 |
+| 更新 | 从 GitHub Releases 检查新版本；下载更新需要签名清单与公钥 |
 
-## 目录
+### 支持的平台
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md)：全面技术架构分析、数据隔离说明、V4.4 对照、跨平台边界、测试策略和迁移路线图。
-- [`FINAL_ACCEPTANCE.md`](FINAL_ACCEPTANCE.md)：当前回归证据、已完成范围、未完成验收项和 macOS/真实站点执行入口。
-- `app/`：Mac 版本的主要开发工程。基于 Electron + React + TypeScript，使用本地账号会话、浏览器视图、代理、素材捕获和下载库；应用级卡密/激活流程不在此工程中。
-- `reference-original/electron-source/`：旧版 Electron/JavaScript 的完整恢复材料，保留原始结构，仅作功能对照，不直接作为 Mac 构建入口。
-- `reference-original/v44-dotnet/`：V4.4 `DolaMultiBrowser.dll` 的 ILSpy 项目级反编译结果。
-- `reference-original/v44-dotnet-helpers/`：V4.4 辅助程序集的反编译结果。
-- `reference-original/v44-launcher/`：外层启动器的反编译结果；其中未复制 187 MB 的内置 payload 二进制。
+豆包、千问、Dola、云雀、Higgsfield、Kimi、oiioii、nano、Lovart、即梦，以及任意自定义 HTTP(S) 网站。
 
-## 构建与验证
+带专用适配器的平台：豆包、千问、Dola、云雀、Higgsfield、即梦；其余平台使用通用浏览器容器和通用媒体捕获。
 
-运行诊断保存在数据目录的 `logs/workbench.log`；Chromium 原始 TLS/GPU 报错单独保存在 `logs/chromium.log`，不再持续刷开发终端。此设置仅改变日志去向，保留证书校验与原有网络路由。豆包图片捕获按生成结果的 `image_ori_raw` 和专用作品桥识别，不再用 CDN 域名或图片尺寸判断是否属于作品。
+## 技术栈
 
-设置 → 常规 → **域名拦截兼容** 默认关闭。已在本机验证为被拦截的五个域名（`mssdk.bytedance.com`、`mon.zijieapi.com`、`vcs.zijieapi.com`、`opt.doubao.com`、`mon-sg.byteintlapi.com`）可在开启后提前取消其 XHR/ping/后台请求，避免已知失败请求继续进入 TLS 握手。选项随时可关闭，不修改 Clash，不提供伪造的成功响应，也不会恢复相关 SDK 接口；网站、登录页面、媒体 CDN 和其他错误仍按原流程处理。仅在原本已拦截这些域名的环境中开启。
+- Electron 43 + React 19 + TypeScript 5.9
+- electron-vite 5 / Vite 7 / Tailwind CSS 4
+- Zod 4（主进程 IPC 参数与持久化数据校验）
+- sing-box 1.13.19（代理核心，随包提供三平台二进制）
+- FFmpeg 静态构建（视频兼容预览）
+- OpenCV.js WASM（人脸检测）
+- Vitest（单元/集成测试）
 
-在 `app/` 目录执行：
+## 架构
 
-```powershell
-npm ci
-npm run typecheck
-npm test
-npm run build
-npm run smoke:task-workflows
-npm run smoke:all
+```
+app/
+├─ src/main/       Electron 主进程：账号、浏览器、代理、媒体、下载、插件、更新
+├─ src/preload/    沙箱 preload，通过 contextBridge 暴露受控 API
+├─ src/renderer/   React 界面
+├─ src/shared/     Zod schema、IPC 通道名、平台定义、URL 规范化
+├─ scripts/        构建、资源校验、冒烟测试、发布辅助脚本
+├─ tests/          Vitest 测试
+├─ sing-box/       三平台代理核心 + 哈希清单
+├─ media-tools/    三平台 FFmpeg + 许可文件
+├─ face-grid-assets/ 人脸检测模型
+└─ build-assets/   图标、macOS entitlements
 ```
 
-`smoke:all` 会串联本地隔离、会话重启、指纹、代理、素材解析、任务工作流、GUI、打包资源和公开入口检查；其中真实第三方登录、macOS 构建以及需要站点账号权限的流程不会被夹具测试冒充为已完成。
+关键设计：
 
-Mac 打包建议在 macOS 主机执行。仓库根目录的 `.github/workflows/release-macos.yml` 提供 x64（macos-13）和 arm64（macos-14）的独立构建、签名、公证、DMG 验证和发布流程；本地执行时在 `package.json` 中配置 `electron-builder` 的 `mac` 目标、签名和公证信息。当前 `app/` 是跨平台 Electron 基线，Windows 专属 WPF/WebView2/Win32 代码没有作为 Mac 运行时依赖引入。
+- **进程隔离**：渲染进程开启 `contextIsolation`、`sandbox`、关闭 `nodeIntegration`；所有能力经 preload 白名单和 IPC 通道暴露。
+- **参数校验**：主进程对每个 IPC 请求做 Zod 校验，并对文件路径、URL 协议、更新来源做白名单限制。
+- **数据原子写入**：账号、设置、下载任务使用临时文件 + rename 的原子存储，避免崩溃时写坏 JSON。
+- **会话隔离**：账号 ID 决定 Chromium partition，代理、指纹、插件和下载目录都绑定到账号。
+- **外部资源固定**：sing-box 和 FFmpeg 通过 `native-resources.json` / 脚本内 SHA-256 校验来源与架构，发布前再由 `audit-package.mjs` 复核。
 
-生成 macOS `.app` 或 DMG 后，可在 `app/` 中执行 `npm run verify:mac-release -- <app路径> <x64|arm64> --dmg <dmg路径>`，检查 Bundle、原生资源架构/权限和哈希；正式签名验收可追加 `--signed`。
+## 开发
 
-## 恢复边界
+### 环境要求
 
-反编译结果可以恢复主要逻辑，但无法恢复原始注释、变量名、构建环境和完整 Git 历史。WPF、WebView2、注册表、Win32 热键以及 Windows 外壳需要在 Mac 端以 Electron/Chromium 或原生 macOS API 重写。
+- Node.js 22 LTS（CI 使用 Node 22）
+- npm 10+
+- Git LFS（仓库中的 sing-box 与 FFmpeg 二进制使用 LFS 存储）
+
+### 启动
+
+```bash
+git lfs install
+git clone https://github.com/selectarget/AIworkbench.git
+cd AIworkbench/app
+npm ci
+npm run dev
+```
+
+Windows 也可以直接运行仓库根目录的 `启动开发环境.cmd`。
+
+### 常用命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run dev` | 开发模式（主进程/preload 文件变更自动重启） |
+| `npm run typecheck` | TypeScript 全量类型检查 |
+| `npm test` | 运行 Vitest 单元/集成测试 |
+| `npm run build` | 构建主进程、preload 和渲染进程到 `out/` |
+| `npm run smoke:all` | 串联类型检查、单元测试和本地 Electron 冒烟 |
+| `npm run smoke:isolation` | 账号会话隔离冒烟 |
+| `npm run smoke:gui` | 渲染界面截图/布局冒烟 |
+| `npm run smoke:public-sites` | 公开站点入口与适配器注入检查 |
+| `npm run audit:legacy-surface` | 旧版 API 表面审计（需要本地保留 `reference-original/`，缺失时跳过） |
+
+### 本地打包
+
+Windows（x64）：
+
+```bash
+npm run pack:win   # 目录包 release/win-unpacked
+npm run dist:win   # 便携版 release/AI创作工作台-<version>-win-x64-portable.exe
+npm run smoke:portable
+```
+
+macOS（需在 macOS 主机执行）：
+
+```bash
+npm run pack:mac            # x64 + arm64 目录包
+npm run dist:mac:unsigned   # 未签名 DMG（CI 同款）
+npm run dist:mac            # 签名 + 公证 DMG
+```
+
+校验 macOS 产物：
+
+```bash
+npm run verify:mac-release -- release/mac/AI创作工作台.app arm64 --dmg release/AI创作工作台-<version>-mac-arm64.dmg
+```
+
+## 数据目录
+
+| 运行方式 | 数据位置 |
+| --- | --- |
+| 开发模式 | `app/data-dev/` |
+| Windows 便携版 | 程序所在目录旁的 `data/`（目录不可写时退回 `%APPDATA%\AI创作工作台\data`） |
+| macOS | `~/Library/Application Support/AI创作工作台/data/` |
+
+子目录：`config/`（账号、设置、插件、备份）、`sessions/`（Chromium 会话）、`logs/`（`workbench.log`、`chromium.log`）、`downloads/`、`updates/`。
+
+代理密码使用 Electron `safeStorage` 加密后保存；应用不保存站点账号密码，第三方登录由各站点页面自行完成。
+
+## CI 与发布
+
+| 工作流 | 触发 | 产物 |
+| --- | --- | --- |
+| `.github/workflows/release.yml` | 推送 `v*` 标签或手动运行 | Windows portable + macOS x64/arm64 DMG，自动创建 GitHub Release 并附 `SHA256SUMS.txt` |
+| `.github/workflows/build-macos.yml` | 推送到 `app/**` 或手动 | macOS x64/arm64 未签名目录包与 DMG，完成审计和启动冒烟（不保留产物） |
+| `.github/workflows/release-macos.yml` | 手动 | 签名、公证后的 macOS DMG，需要 Apple 证书与公证密钥 |
+| `.github/workflows/build-macos-test-release.yml` | 手动 | 未签名 macOS 测试 DMG，上传到 draft Release |
+
+发布新版本：
+
+```bash
+cd app
+npm version 1.0.2 --no-git-tag-version   # 或手动修改 package.json
+cd ..
+git commit -am "chore: release v1.0.2"
+git push origin main
+git tag v1.0.2
+git push origin v1.0.2
+```
+
+`release.yml` 会自动把标签版本写入打包配置，因此 Release 中的文件名和应用版本与标签一致。macOS 使用 `macos-15-intel`（x64）和 `macos-15`（arm64）原生 runner。
+
+自动构建的 macOS 包**未签名、未公证**。首次打开请右键选择“打开”，或在“系统设置 → 隐私与安全性”中允许。需要正式签名发布时，配置以下仓库 Secrets 并手动运行 `release-macos.yml`：
+
+`MACOS_CERTIFICATE_P12_BASE64`、`MACOS_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`。
+
+### 自动更新
+
+应用默认从 `selectarget/AIworkbench` 的 GitHub Releases 检查新版本，可用 `GITHUB_RELEASE_REPO=owner/repo` 覆盖。下载更新包还需要 Release 中存在由 `UPDATE_PRIVATE_KEY` 签名的 `update-manifest-<target>.json`，且构建时注入对应公钥 `UPDATE_PUBLIC_KEY`；当前自动发布流程只负责生成安装包，不生成签名更新清单。
+
+## 已知限制
+
+- 真实站点的登录、验证码、2FA、生成任务和下载权限必须用自有账号人工验收，自动化测试不会冒充这些流程。
+- 第三方站点页面结构变化可能导致专用适配器失效；通用浏览器和媒体捕获仍可继续使用。
+- 未签名的 macOS 构建会受到 Gatekeeper 拦截；Windows 便携版未做代码签名，可能出现 SmartScreen 提示。
+- `reference-original/` 反编译材料不进入仓库，因此旧版 API 表面审计只在保留了该目录的机器上执行。
+- 使用本工具时请遵守目标网站的服务条款和当地法律；项目不提供绕过付费、权限或访问控制的能力。
+
+## 第三方组件
+
+- [sing-box](https://github.com/SagerNet/sing-box)：GPL-3.0-or-later，许可文件见 `app/sing-box/licenses/`
+- FFmpeg 静态构建：GPL 构建，许可与再分发说明见 `app/media-tools/licenses/`
+- OpenCV.js：Apache-2.0，许可文件见 `app/face-grid-assets/licenses/`
+- Electron、React、Vite、Tailwind CSS、Zod 等依赖遵循各自许可证

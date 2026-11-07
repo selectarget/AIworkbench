@@ -12,7 +12,7 @@ jobs:
     name: Build macOS x64 and arm64 directory packages
     permissions:
       contents: write
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     defaults:
       run:

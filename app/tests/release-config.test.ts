@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -24,9 +24,9 @@ describe('release configuration', () => {
     expect(existsSync(workflowPath)).toBe(true);
     const workflow = readFileSync(workflowPath, 'utf8');
     expect(workflow).toContain('arch: x64');
-    expect(workflow).toContain('runner: macos-13');
+    expect(workflow).toContain('runner: macos-15-intel');
     expect(workflow).toContain('arch: arm64');
-    expect(workflow).toContain('runner: macos-14');
+    expect(workflow).toContain('runner: macos-15');
     expect(workflow).toContain('MACOS_CERTIFICATE_P12_BASE64');
     expect(workflow).toContain('APPLE_APP_SPECIFIC_PASSWORD');
     expect(workflow).toContain('electron-builder --mac dmg --${{ matrix.arch }} --publish always');
@@ -44,11 +44,35 @@ describe('release configuration', () => {
     expect(existsSync(nestedWorkflowPath)).toBe(false);
     const workflow = readFileSync(workflowPath, 'utf8');
     expect(workflow).toContain('working-directory: app');
-    expect(workflow).toContain('runs-on: macos-14');
+    expect(workflow).toContain('runs-on: macos-15');
     expect(workflow).toContain('npm run pack:mac');
     expect(workflow).toContain('npm run dist:mac:unsigned');
     expect(workflow).toContain('scripts/audit-package.mjs');
     expect(workflow).toContain('scripts/smoke-packaged.mjs');
     expect(workflow).toContain('scripts/verify-macos-release.mjs');
+  });
+
+  it('builds Windows and macOS binaries for a tagged release', () => {
+    const workflowPath = resolve('..', '.github', 'workflows', 'release.yml');
+    expect(existsSync(workflowPath)).toBe(true);
+    const workflow = readFileSync(workflowPath, 'utf8');
+    expect(workflow).toContain('tags:');
+    expect(workflow).toContain('runs-on: windows-latest');
+    expect(workflow).toContain('runner: macos-15-intel');
+    expect(workflow).toContain('runner: macos-15');
+    expect(workflow).toContain('electron-builder --win portable --x64 --publish never');
+    expect(workflow).toContain('electron-builder --mac dmg --${{ matrix.arch }} --publish never');
+    expect(workflow).toContain('scripts/audit-package.mjs release/win-unpacked win32 x64');
+    expect(workflow).toContain('scripts/verify-macos-release.mjs');
+    expect(workflow).toContain('gh release create');
+    expect(workflow).toContain('SHA256SUMS.txt');
+  });
+
+  it('does not reference retired macOS runner images', () => {
+    const workflows = readdirSync(resolve('..', '.github', 'workflows'))
+      .filter((name) => name.endsWith('.yml'))
+      .map((name) => readFileSync(resolve('..', '.github', 'workflows', name), 'utf8'))
+      .join('\n');
+    expect(workflows).not.toMatch(/macos-13|macos-14\b/);
   });
 });

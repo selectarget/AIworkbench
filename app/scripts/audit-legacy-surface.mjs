@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +8,14 @@ const legacyPreload = resolve(appRoot, '..', 'reference-original', 'electron-sou
 const currentPreload = resolve(appRoot, 'src', 'preload', 'index.ts');
 const currentChannels = resolve(appRoot, 'src', 'shared', 'channels.ts');
 const currentMain = resolve(appRoot, 'src', 'main');
+
+// The decompiled legacy sources are deliberately kept out of git, so this
+// audit can only run on a workstation that still has the recovery material.
+// CI and fresh clones skip it instead of failing the release pipeline.
+if (!existsSync(legacyPreload)) {
+  console.log(`legacy API surface audit skipped: ${legacyPreload} is not present`);
+  process.exit(0);
+}
 
 const legacySource = readFileSync(legacyPreload, 'utf8');
 const currentSource = [
