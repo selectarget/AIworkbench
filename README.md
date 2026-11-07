@@ -118,7 +118,7 @@ npm run dist:mac            # 签名 + 公证 DMG
 校验 macOS 产物：
 
 ```bash
-npm run verify:mac-release -- release/mac/AI创作工作台.app arm64 --dmg release/AI创作工作台-<version>-mac-arm64.dmg
+npm run verify:mac-release -- "release/mac-arm64/AI创作工作台.app" arm64 --dmg "release/AI创作工作台-<version>-mac-arm64.dmg"
 ```
 
 ## 数据目录

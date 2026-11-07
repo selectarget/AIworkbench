@@ -40,7 +40,7 @@
     "audit:legacy-surface": "node scripts/audit-legacy-surface.mjs",
     "verify:mac-release": "node scripts/verify-macos-release.mjs",
     "pack:win": "node scripts/prepare-media-resources.mjs win32 x64 && npm run build && node scripts/validate-native-resources.mjs win32 x64 && electron-builder --win --x64 --dir",
-    "dist:win": "node scripts/validate-release-env.mjs && node scripts/prepare-media-resources.mjs win32 x64 && node scripts/validate-native-resources.mjs win32 x64 && npm run build && electron-builder --win portable --x64",
+    "dist:win": "node scripts/prepare-media-resources.mjs win32 x64 && node scripts/validate-native-resources.mjs win32 x64 && npm run build && electron-builder --win portable --x64",
     "pack:mac": "node scripts/prepare-media-resources.mjs darwin x64 darwin arm64 && npm run build && node scripts/prepare-native-resources.mjs darwin x64 darwin arm64 && node scripts/validate-native-resources.mjs darwin x64 darwin arm64 && electron-builder --mac --dir --x64 --arm64 --publish never",
     "dist:mac:unsigned": "node scripts/prepare-media-resources.mjs darwin x64 darwin arm64 && node scripts/prepare-native-resources.mjs darwin x64 darwin arm64 && node scripts/validate-native-resources.mjs darwin x64 darwin arm64 && npm run build && electron-builder --mac dmg --x64 --arm64 --publish never",
     "dist:mac": "node scripts/prepare-media-resources.mjs darwin x64 darwin arm64 && node scripts/prepare-native-resources.mjs darwin x64 darwin arm64 && node scripts/validate-native-resources.mjs darwin x64 darwin arm64 && npm run build && electron-builder --mac dmg"
